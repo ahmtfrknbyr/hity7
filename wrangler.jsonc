@@ -1,0 +1,24 @@
+{
+  // HITY7 — Cloudflare Workers (Free) yayın ayarı. Ayrıntı: YAYIN-PLANI.md Aşama 4.
+  // Gizli anahtarlar (SUPABASE_SECRET_KEY, ANTHROPIC_API_KEY) BURAYA YAZILMAZ:
+  // yalnızca `npx wrangler secret put <AD>` ile Cloudflare'e girilir.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hity7",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      // OpenNext'in kendi kendine çağrı bağlantısı; ad, Worker adıyla aynı olmalı
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "hity7"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
