@@ -8,7 +8,24 @@
  * Veritabanına ulaşılamazsa varsayılan içerik döner; site hiçbir zaman bozulmaz.
  */
 import { useEffect, useState } from "react";
-import { DEFAULT_CONTENT, fetchLegalContent, fetchSiteContent, type LegalContent, type SiteContent } from "./site-content";
+import { DEFAULT_CONTENT, fetchLegalContent, fetchSiteContent, mergeFooter, mergeHome, mergeNav, type LegalContent, type SiteContent } from "./site-content";
+
+/** CEO panelindeki "Önizle" düğmesinin yazdığı taslak (yalnızca o tarayıcıda, adres ?onizleme=1 iken, 2 saat) */
+export const ONIZLEME_ANAHTARI = "h7_onizleme";
+export type OnizlemeIcerik = SiteContent & { _onizleme?: boolean };
+
+function onizlemeUygula(c: SiteContent): OnizlemeIcerik {
+  try {
+    if (!new URLSearchParams(window.location.search).has("onizleme")) return c;
+    const raw = window.localStorage.getItem(ONIZLEME_ANAHTARI);
+    if (!raw) return c;
+    const d = JSON.parse(raw) as { at?: number; home?: unknown; nav?: unknown; footer?: unknown };
+    if (!d || !(Date.now() - Number(d.at) < 2 * 3600_000)) return c;
+    return { ...c, home: mergeHome(d.home), nav: mergeNav(d.nav), footer: mergeFooter(d.footer), _onizleme: true };
+  } catch {
+    return c;
+  }
+}
 
 const TTL = 15000;
 let shared: { at: number; promise: Promise<SiteContent> } | null = null;
@@ -19,13 +36,13 @@ function loadShared(): Promise<SiteContent> {
   return shared.promise;
 }
 
-export function useSiteContent(): SiteContent {
-  const [content, setContent] = useState<SiteContent>(DEFAULT_CONTENT);
+export function useSiteContent(): OnizlemeIcerik {
+  const [content, setContent] = useState<OnizlemeIcerik>(DEFAULT_CONTENT);
   useEffect(() => {
     let alive = true;
     const load = () => {
       loadShared().then((c) => {
-        if (alive) setContent(c);
+        if (alive) setContent(onizlemeUygula(c));
       });
     };
     load();

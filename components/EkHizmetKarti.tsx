@@ -4,12 +4,13 @@
  * components/EkHizmetKarti.tsx
  * Hizmet sayfasının sağ üstündeki ek hizmet (upsell) kartı.
  * Başlık, önerilen ek hizmetler ve fiyatlar yönetim panelinden gelir (Hizmetler & Fiyatlar → Ek hizmetler).
- * Ek hizmet sepette bu sayfanın ana hizmetine bağlanır ve aynı siparişte, aynı ödemede satılır.
+ * Sepet yoktur: seçilen ek hizmet bu sayfadaki siparişe eklenir ve aynı siparişte, aynı ödemede alınır
+ * (fiyat sunucuda güncel kayıttan yeniden hesaplanır).
  * Birden fazla ek hizmet önerilirse müşteri birini seçer. Stil kendi içindedir.
+ * Kullanım: <EkHizmetKarti service="remake" value={addonId} onChange={setAddonId} />
  */
 import { useId, useState } from "react";
 import { useSiteContent } from "../lib/use-site-content";
-import { addAddon, addonKey, mainKey, openCart, removeLine, useCart, type CartAddon } from "../lib/sepet";
 import { SERVICE_NAMES, offerFor, tl } from "../lib/sepet-hesap";
 import type { CartService } from "../lib/site-content";
 
@@ -58,9 +59,19 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){.h7u,.h7u-opt,.h7u-cta,.h7u-ok,.h7u-flash,.h7u-dot::after{animation:none!important;transition:none!important}}
 `;
 
-export default function EkHizmetKarti({ service, className = "" }: { service: CartService; className?: string }) {
+export default function EkHizmetKarti({
+  service,
+  value,
+  onChange,
+  className = "",
+}: {
+  service: CartService;
+  /** Siparişe eklenen ek hizmetin kimliği ("" = eklenmedi) */
+  value: string;
+  onChange: (addonId: string) => void;
+  className?: string;
+}) {
   const content = useSiteContent();
-  const cart = useCart();
   const [picked, setPicked] = useState("");
   const [flash, setFlash] = useState("");
   const group = useId();
@@ -68,23 +79,20 @@ export default function EkHizmetKarti({ service, className = "" }: { service: Ca
   const offer = offerFor(content, service);
   if (!offer) return null;
 
-  const inCart = cart.lines.find((l): l is CartAddon => l.key === addonKey(service)) || null;
-  const hasMain = cart.lines.some((l) => l.key === mainKey(service));
-  const selected = offer.addons.find((a) => a.id === (picked || inCart?.addonId)) || offer.addons[0];
-  const isIn = inCart?.addonId === selected.id;
+  const eklenen = offer.addons.find((a) => a.id === value) || null;
+  const selected = offer.addons.find((a) => a.id === (picked || eklenen?.id)) || offer.addons[0];
+  const isIn = eklenen?.id === selected.id;
   const single = offer.addons.length === 1;
   const mainName = SERVICE_NAMES[service];
 
   function add() {
-    const r = addAddon(service, selected.id);
-    if (r === "exists") setFlash("Bu ek hizmet zaten sepette.");
-    else if (r === "replaced") setFlash(`Ek hizmet ${selected.name} olarak güncellendi.`);
-    else setFlash(hasMain ? `${selected.name} sepete eklendi.` : `${selected.name} sepete eklendi. ${mainName} siparişini de sepete ekleyince ikisi aynı siparişte birleşir.`);
+    onChange(selected.id);
+    setFlash(eklenen ? `Ek hizmet ${selected.name} olarak güncellendi.` : `${selected.name} siparişine eklendi.`);
   }
 
   function remove() {
-    removeLine(addonKey(service));
-    setFlash("Ek hizmet sepetten çıkarıldı.");
+    onChange("");
+    setFlash("Ek hizmet siparişten çıkarıldı.");
   }
 
   return (
@@ -129,7 +137,7 @@ export default function EkHizmetKarti({ service, className = "" }: { service: Ca
                   {a.desc && <small>{a.desc}</small>}
                 </span>
                 <span className="h7u-optp">+{tl(a.price)}</span>
-                {inCart?.addonId === a.id && <span className="h7u-in">SEPETTE</span>}
+                {eklenen?.id === a.id && <span className="h7u-in">EKLENDİ</span>}
               </label>
             );
           })}
@@ -140,7 +148,7 @@ export default function EkHizmetKarti({ service, className = "" }: { service: Ca
         {isIn ? (
           <>
             <span className="h7u-ok" role="status">
-              ✓ SEPETTE
+              ✓ SİPARİŞE EKLENDİ
             </span>
             <button type="button" className="h7u-rm" onClick={remove}>
               Çıkar
@@ -148,7 +156,7 @@ export default function EkHizmetKarti({ service, className = "" }: { service: Ca
           </>
         ) : (
           <button type="button" className="h7u-cta" onClick={add}>
-            {inCart ? "Seçimi güncelle" : "Sepete ekle"}
+            {eklenen ? "Seçimi güncelle" : "Siparişe ekle"}
             <span>+{tl(selected.price)}</span>
           </button>
         )}
@@ -157,12 +165,9 @@ export default function EkHizmetKarti({ service, className = "" }: { service: Ca
       {flash ? (
         <p className="h7u-flash" role="status">
           {flash}
-          <button type="button" className="h7u-open" onClick={openCart}>
-            Sepeti gör →
-          </button>
         </p>
       ) : (
-        <p className="h7u-foot">Sepette {mainName} siparişine bağlanır; ikisi aynı siparişte, tek ödemede alınır.</p>
+        <p className="h7u-foot">{mainName} siparişine eklenir; ikisi aynı siparişte, tek ödemede alınır.</p>
       )}
     </aside>
   );

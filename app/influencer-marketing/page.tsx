@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "../../lib/supabase";
-import { istekKimligi, sendOrder } from "../../lib/siparis";
+import { bakiyeYukleAdresi, istekKimligi, sendOrder } from "../../lib/siparis";
 import SozlesmeOnay from "../../components/SozlesmeOnay";
-import { INFLUENCER_MAX, REELS, TIKTOK, TIKTOK_MIN, accountKey, minInfluencers } from "../../lib/influencer-kural";
+import SiparisOnizleme, { type OnizlemeKalem } from "../../components/SiparisOnizleme";
+import {
+  INDIRIM_KADEMELERI,
+  INFLUENCER_MAX,
+  REELS,
+  TIKTOK,
+  TIKTOK_MIN,
+  accountKey,
+  bireyselIndirim,
+  minInfluencers,
+  tlKurus,
+} from "../../lib/influencer-kural";
+import { kalanSure, paketFiyat, paketleriOku, sunucuSaatFarki, type Paket } from "../../lib/paket";
 
 type Creator = {
   id: string;
@@ -158,6 +170,49 @@ textarea.im-in { resize:vertical; }
 .im-card.dup { opacity:.55; }
 .im-dup { position:absolute; right:10px; top:10px; background:#fff; color:#111; border:2px solid #111; font-size:10px; font-weight:900; letter-spacing:.06em; padding:5px 9px; border-radius:999px; }
 .im-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:0 3px 0 #111; }
+.im-bilgi { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:18px; margin:0 0 30px; }
+.im-tiers { background:#fff; border:3px solid #111; border-radius:28px; padding:22px; box-shadow:0 7px 0 #111; }
+.im-tiers h3 { font-size:22px; letter-spacing:-.03em; font-weight:900; margin:10px 0 12px; }
+.im-tier-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.im-tier { border:2.5px solid #111; border-radius:18px; padding:12px; background:#f5f5f5; transition:background .25s, transform .25s; }
+.im-tier.on { background:#f5c518; transform:translateY(-2px); box-shadow:0 4px 0 #111; }
+.im-tier b { display:block; font-size:30px; letter-spacing:-.05em; font-weight:900; line-height:1; }
+.im-tier small { display:block; margin-top:6px; font-size:11.5px; font-weight:700; color:#333; line-height:1.35; }
+.im-tiers p { margin-top:12px; font-size:12.5px; color:#686868; line-height:1.55; }
+.im-uyari { background:#111; color:#fff; border:3px solid #111; border-radius:28px; padding:22px; box-shadow:0 7px 0 #f5c518; display:flex; flex-direction:column; gap:12px; }
+.im-uyari strong { color:#f5c518; font-size:12px; letter-spacing:.12em; font-weight:900; }
+.im-uyari p { color:#e8e8e8; font-size:14px; line-height:1.65; }
+.im-uyari-btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
+.im-uyari-btns a { border:2.5px solid #f5c518; border-radius:999px; padding:10px 16px; font-size:12px; font-weight:800; letter-spacing:.04em; }
+.im-uyari-btns a.dolu { background:#f5c518; color:#111; }
+.im-uyari-btns a:hover { background:#fff; color:#111; border-color:#fff; }
+.im-mod { display:inline-flex; gap:6px; padding:6px; border:3px solid #111; border-radius:999px; background:#fff; box-shadow:0 5px 0 #111; margin:0 0 26px; flex-wrap:wrap; }
+.im-mod button { border:0; border-radius:999px; padding:12px 20px; font-size:13px; font-weight:800; letter-spacing:.02em; background:transparent; cursor:pointer; }
+.im-mod button.on { background:#f5c518; box-shadow:inset 0 0 0 2.5px #111; }
+.im-eski { text-decoration:line-through; color:#9a9a9a; font-weight:700; }
+.im-ind { color:#0a7a32; font-weight:800; }
+.im-next { margin-top:10px; border:2px dashed #111; border-radius:14px; padding:10px 12px; font-size:12.5px; line-height:1.5; font-weight:600; background:#fffdf2; }
+.im-pk-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:18px; }
+.im-pk { background:#fff; border:3px solid #111; border-radius:26px; overflow:hidden; display:flex; flex-direction:column; transition:transform .15s, box-shadow .15s; }
+.im-pk:hover { transform:translateY(-3px); box-shadow:0 8px 0 #111; }
+.im-pk.sel { background:#fff9db; box-shadow:0 6px 0 #f5c518, 0 0 0 3px #111; }
+.im-pk-gorsel { position:relative; aspect-ratio:16/10; background:#111 center/cover no-repeat; border-bottom:3px solid #111; display:grid; place-items:center; color:#f5c518; font-size:38px; font-weight:900; letter-spacing:-.04em; }
+.im-pk-gorsel img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.im-firsat { position:absolute; left:10px; top:10px; background:#f5c518; color:#111; border:2px solid #111; border-radius:999px; padding:6px 11px; font-size:10.5px; font-weight:900; letter-spacing:.08em; animation:imPulse 1.8s ease-in-out infinite; }
+.im-pk-body { padding:16px; display:flex; flex-direction:column; gap:10px; flex:1; }
+.im-pk-body h3 { font-size:20px; letter-spacing:-.03em; font-weight:900; }
+.im-pk-body p { font-size:13px; color:#555; line-height:1.55; white-space:pre-line; }
+.im-pk-kapsam { font-size:12px; font-weight:700; background:#f5f5f5; border:2px solid #111; border-radius:14px; padding:9px 11px; line-height:1.5; }
+.im-pk-fiyat { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:auto; }
+.im-pk-fiyat b { font-size:26px; letter-spacing:-.04em; font-weight:900; display:block; }
+.im-pk-fiyat .im-eski { font-size:14px; }
+.im-yuzde { display:inline-block; background:#111; color:#f5c518; border-radius:999px; padding:3px 8px; font-size:11px; font-weight:900; margin-left:6px; vertical-align:middle; }
+.im-sayac { font-size:12px; font-weight:800; color:#111; background:#fff6cf; border:2px solid #111; border-radius:12px; padding:7px 10px; font-variant-numeric:tabular-nums; }
+.im-bos { border:3px dashed #111; border-radius:26px; padding:28px; text-align:center; background:#fff; font-weight:600; color:#555; line-height:1.6; }
+.im-topup { display:inline-block; margin-top:10px; border:2.5px solid #111; border-radius:999px; background:#f5c518; padding:10px 16px; font-weight:800; font-size:12px; }
+@keyframes imPulse { 0%,100% { transform:none; } 50% { transform:scale(1.06); } }
+@media (max-width:1020px) { .im-bilgi { grid-template-columns:1fr; } }
+@media (max-width:640px) { .im-tier-row { grid-template-columns:1fr; } .im-tier b { font-size:24px; } .im-mod { display:flex; width:100%; } .im-mod button { flex:1; padding:11px 10px; font-size:12px; } .im-pk-grid { grid-template-columns:1fr; } }
 .im-req { margin-top:16px; border:2.5px solid #111; border-radius:18px; padding:14px; background:#fff6cf; transition:background .3s ease; }
 .im-req.ok { background:#f5c518; }
 .im-req-top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:11px; font-weight:800; letter-spacing:.1em; }
@@ -170,7 +225,14 @@ textarea.im-in { resize:vertical; }
 @media (prefers-reduced-motion:reduce) { .im-card, .im-btn, .im-tt, .im-bar i, .im-req { transition:none; animation:none; } }
 `;
 
+const ONEMLI_BILGI =
+  "Influencer Marketing reklam çalışmalarınızın planlanabilmesi için şarkınız çıkmadıysa eğer yayın tarihinden en az 10 gün önce Destek bölümümüz üzerinden bizimle iletişime geçmeniz ve hesabınıza gerekli bakiyeyi yüklemeniz gerekmektedir. Çıktığı gün direkt pr ve reklam çalışmasını başlatabilelim";
+
+type Mod = "sec" | "paket";
+type Onizleme = { tur: "bireysel" } | { tur: "paket"; paket: Paket } | null;
+
 export default function InfluencerMarketingPage() {
+  const [mod, setMod] = useState<Mod>("sec");
   const [campaignTypes, setCampaignTypes] = useState<string[]>(["TikTok Video"]);
   const [selected, setSelected] = useState<string[]>([]);
   const [creators, setCreators] = useState<Creator[]>(SAMPLE_CREATORS);
@@ -183,11 +245,22 @@ export default function InfluencerMarketingPage() {
   const [sending, setSending] = useState(false);
   const [onay, setOnay] = useState(false);
   const [doneCode, setDoneCode] = useState("");
+  // Hazır paketler
+  const [paketler, setPaketler] = useState<Paket[]>([]);
+  const [paketDurum, setPaketDurum] = useState<"load" | "ok" | "yok" | "hata">("load");
+  const [paketId, setPaketId] = useState<string>("");
+  const [saatFarki, setSaatFarki] = useState(0);
+  // Derleme sırasında sabit kalması için 0 ile başlar; gerçek zaman tarayıcıda alınır (aşağıdaki effect)
+  const [simdi, setSimdi] = useState(0);
+  // Onay ekranı
+  const [onizleme, setOnizleme] = useState<Onizleme>(null);
+  const [onizHata, setOnizHata] = useState("");
+  const [eksik, setEksik] = useState<number | null>(null);
   // Tekrar koruması: aynı kampanya yeniden gönderilirse ikinci kez ücretlendirilmez
   const istekRef = useRef<{ key: string; sig: string } | null>(null);
 
   // Panelden eklenen gerçek influencerlar (yoksa örnek profiller görünür)
-  useEffect(() => {
+  const influencerOku = useCallback(() => {
     const sb = getSupabase();
     if (!sb) return;
     sb.from("influencers")
@@ -196,28 +269,60 @@ export default function InfluencerMarketingPage() {
       .order("sort", { ascending: true })
       .then(({ data, error }) => {
         if (error || !data || !data.length) return;
-        setCreators(
-          (data as DbInfluencer[]).map(d => ({
-            id: d.id,
-            name: d.name,
-            username: d.username ? (d.username.startsWith("@") ? d.username : "@" + d.username) : "",
-            followerCount: Number(d.followers) || 0,
-            price: Number(d.price) || 0,
-            image: d.photo_url || "",
-            tiktokUrl: d.tiktok || "",
-            instagramUrl: d.instagram || "",
-            youtubeUrl: d.youtube || "",
-          }))
-        );
+        const yeni = (data as DbInfluencer[]).map((d) => ({
+          id: d.id,
+          name: d.name,
+          username: d.username ? (d.username.startsWith("@") ? d.username : "@" + d.username) : "",
+          followerCount: Number(d.followers) || 0,
+          price: Number(d.price) || 0,
+          image: d.photo_url || "",
+          tiktokUrl: d.tiktok || "",
+          instagramUrl: d.instagram || "",
+          youtubeUrl: d.youtube || "",
+        }));
+        setCreators(yeni);
         setIsSample(false);
-        setSelected([]);
+        // Artık satışta olmayanlar seçimden çıkarılır
+        setSelected((cur) => cur.filter((id) => yeni.some((c) => c.id === id)));
       });
   }, []);
 
-  const selectedCreators = creators.filter(c => selected.includes(c.id));
-  const total = useMemo(() => selectedCreators.reduce((sum, c) => sum + c.price, 0), [selectedCreators]);
+  const paketOku = useCallback(async () => {
+    const r = await paketleriOku();
+    if (!r.ok) {
+      setPaketDurum(r.error === "kurulmadi" ? "yok" : "hata");
+      return;
+    }
+    setPaketler(r.paketler);
+    setPaketDurum("ok");
+    setPaketId((cur) => (cur && r.paketler.some((p) => p.id === cur) ? cur : ""));
+  }, []);
 
-  // Kampanya kuralı (sunucuda da aynısı uygulanır): TikTok'ta en az 30 FARKLI hesap; aynı hesap iki kez seçilemez
+  useEffect(() => {
+    influencerOku();
+    void paketOku();
+    sunucuSaatFarki().then((f) => {
+      setSaatFarki(f);
+      setSimdi(Date.now());
+    });
+    // Adres #paketler ile açıldıysa paket bölümü
+    if (typeof window !== "undefined" && window.location.hash === "#paketler") setMod("paket");
+  }, [influencerOku, paketOku]);
+
+  // Kampanya geri sayımı (sunucu saatine göre). Yalnızca kampanyalı paket varken saniyede bir güncellenir.
+  const kampanyaVar = paketler.some((p) => p.kampanyalar.length > 0);
+  useEffect(() => {
+    if (!kampanyaVar) return;
+    const t = setInterval(() => setSimdi(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [kampanyaVar]);
+  const sunucuSimdi = simdi + saatFarki;
+
+  const selectedCreators = creators.filter((c) => selected.includes(c.id));
+  // Kademeli, birikmeyen indirim (kuruş hassasiyetinde; sunucu ve veritabanı aynı kuralı uygular)
+  const ind = useMemo(() => bireyselIndirim(selectedCreators.map((c) => c.price)), [selectedCreators]);
+
+  // Kampanya kuralı (sunucuda da aynısı uygulanır): TikTok'ta en az 5 FARKLI hesap; aynı hesap iki kez seçilemez
   const accountOf = (c: Creator) => accountKey({ id: c.id, tiktok: c.tiktokUrl, username: c.username });
   const selectedAccounts = new Set(selectedCreators.map(accountOf));
   const count = selectedAccounts.size;
@@ -226,71 +331,185 @@ export default function InfluencerMarketingPage() {
   const missing = Math.max(0, need - count);
   const availableAccounts = new Set(creators.map(accountOf)).size;
   const pct = Math.min(100, Math.round((count / TIKTOK_MIN) * 100));
+  const seciliPaket = paketler.find((p) => p.id === paketId) || null;
+  const seciliFiyat = seciliPaket ? paketFiyat(seciliPaket, sunucuSimdi) : null;
 
   const toggleCampaign = (type: string) =>
-    setCampaignTypes(cur => (cur.includes(type) ? cur.filter(t => t !== type) : [...cur, type]));
+    setCampaignTypes((cur) => (cur.includes(type) ? cur.filter((t) => t !== type) : [...cur, type]));
 
   const toggleCreator = (c: Creator) => {
     setNotice("");
-    if (selected.includes(c.id)) return setSelected(cur => cur.filter(x => x !== c.id));
+    setDoneCode("");
+    if (selected.includes(c.id)) return setSelected((cur) => cur.filter((x) => x !== c.id));
     if (selectedAccounts.has(accountOf(c))) {
       return setNotice(`${c.username || c.name} hesabı zaten seçili. Aynı hesap bir kampanyada iki kez yer alamaz.`);
     }
     if (selected.length >= INFLUENCER_MAX) return setNotice(`Bir kampanyada en fazla ${INFLUENCER_MAX} influencer seçebilirsin.`);
-    setSelected(cur => (cur.includes(c.id) ? cur : [...cur, c.id]));
+    setSelected((cur) => (cur.includes(c.id) ? cur : [...cur, c.id]));
   };
 
-  const submitOrder = async () => {
+  /** Ortak form kontrolleri (link, ad, iletişim, sözleşme) */
+  const formHatasi = (): string => {
+    if (!/^https?:\/\/\S+\.\S+/i.test(link.trim())) return "Lütfen tanıtılacak içeriğin linkini gir (https:// ile başlamalı).";
+    if (!name.trim() || !contact.trim()) return "Lütfen adını ve iletişim bilgini (e-posta veya telefon) yaz.";
+    if (!onay) return "Siparişi oluşturmak için sözleşme onay kutusunu işaretle.";
+    return "";
+  };
+
+  const bireyselOnizle = () => {
+    setDoneCode("");
     if (!campaignTypes.length) return setNotice("Lütfen TikTok Video veya Instagram Reels seç.");
     if (!selected.length) return setNotice("Lütfen en az bir influencer seç.");
     if (tiktokOn && count < TIKTOK_MIN) return setNotice(`TikTok kampanyası için en az ${TIKTOK_MIN} farklı influencer seçmelisin. Şu an ${count}/${TIKTOK_MIN}.`);
-    if (!/^https?:\/\/\S+\.\S+/i.test(link.trim())) return setNotice("Lütfen tanıtılacak içeriğin linkini gir (https:// ile başlamalı).");
-    if (!name.trim() || !contact.trim()) return setNotice("Lütfen adını ve iletişim bilgini (e-posta veya telefon) yaz.");
     if (isSample) return setNotice("Gerçek influencerlar henüz eklenmemiş; sipariş şimdilik gönderilemez.");
-    if (!onay) return setNotice("Siparişi oluşturmak için sözleşme onay kutusunu işaretle.");
-
-    setSending(true);
+    const h = formHatasi();
+    if (h) return setNotice(h);
     setNotice("");
+    setOnizHata("");
+    setEksik(null);
+    setOnizleme({ tur: "bireysel" });
+  };
+
+  const paketOnizle = () => {
+    setDoneCode("");
+    if (!seciliPaket) return setNotice("Lütfen bir paket seç.");
+    const h = formHatasi();
+    if (h) return setNotice(h);
+    setNotice("");
+    setOnizHata("");
+    setEksik(null);
+    setOnizleme({ tur: "paket", paket: seciliPaket });
+  };
+
+  const siparisVer = async () => {
+    if (!onizleme) return;
+    setSending(true);
+    setOnizHata("");
     try {
-      const istekId = istekKimligi(istekRef, JSON.stringify([[...campaignTypes].sort(), [...selected].sort(), link.trim()]));
-      const r = await sendOrder({
-        type: "influencer",
-        accept: onay,
-        istekId,
-        name: name.trim(),
-        contact: contact.trim(),
-        details: [],
-        link: link.trim(),
-        brief: brief.trim(),
-        campaignTypes,
-        influencerIds: selected,
-      });
-      if (!r.ok) setNotice(r.error || "Sipariş gönderilemedi. Lütfen tekrar dene.");
-      else {
+      const ortak = { accept: onay, name: name.trim(), contact: contact.trim(), details: [] as [string, string][], link: link.trim(), brief: brief.trim(), yonlendir: false };
+      const r =
+        onizleme.tur === "bireysel"
+          ? await sendOrder({
+              ...ortak,
+              type: "influencer",
+              istekId: istekKimligi(istekRef, JSON.stringify(["b", [...campaignTypes].sort(), [...selected].sort(), link.trim(), ind.toplam])),
+              campaignTypes,
+              influencerIds: selected,
+              beklenenTutar: ind.toplam,
+            })
+          : await sendOrder({
+              ...ortak,
+              type: "paket",
+              istekId: istekKimligi(istekRef, JSON.stringify(["p", onizleme.paket.id, link.trim(), seciliFiyat?.final])),
+              paketId: onizleme.paket.id,
+              beklenenTutar: paketFiyat(onizleme.paket, Date.now() + saatFarki).final,
+            });
+      if (r.ok) {
         istekRef.current = null;
+        setOnizleme(null);
         setDoneCode(r.code || "");
-        setSelected([]);
+        if (onizleme.tur === "bireysel") setSelected([]);
+        else setPaketId("");
         setLink("");
         setBrief("");
         setOnay(false);
+      } else if (r.needTopup) {
+        setEksik(r.missing || null);
+        setOnizHata(r.error || "Yetersiz bakiye.");
+      } else if (r.fiyatDegisti) {
+        // Fiyat değişti (ör. kampanya bitti): güncel fiyatlar yeniden okunur, müşteriden yeniden onay istenir
+        setOnizHata(
+          (r.error || "Fiyat değişti.") +
+            (r.guncel?.toplam !== undefined
+              ? ` Güncel tutar: ${tlKurus(Number(r.guncel.toplam))}.`
+              : r.guncel?.final !== undefined
+                ? ` Güncel tutar: ${tlKurus(Number(r.guncel.final))}.`
+                : "")
+        );
+        influencerOku();
+        await paketOku();
+        setSaatFarki(await sunucuSaatFarki());
+        setOnizleme(null);
+        setNotice("Fiyat güncellendi. Lütfen yeni tutarı kontrol edip siparişi yeniden onayla.");
+      } else {
+        setOnizHata(r.error || "Sipariş gönderilemedi. Lütfen tekrar dene.");
       }
     } catch {
-      setNotice("Bağlantı hatası. Lütfen tekrar dene.");
+      setOnizHata("Bağlantı hatası. Tekrar deneyebilirsin; aynı sipariş ikinci kez ücretlendirilmez.");
     }
     setSending(false);
   };
 
+  // Onay ekranı içeriği
+  const oniz: { baslik: string; kalemler: OnizlemeKalem[]; ara: number; indirim: { etiket: string; tutar: number } | null; toplam: number } | null =
+    onizleme?.tur === "bireysel"
+      ? {
+          baslik: `Influencer kampanyası · ${selectedCreators.length} influencer`,
+          kalemler: [
+            { ad: "Paylaşım türü", not: campaignTypes.join(" + ") },
+            ...selectedCreators.map((c) => ({ ad: c.name, not: c.username, tutar: c.price })),
+          ],
+          ara: ind.brut,
+          indirim: ind.oran > 0 ? { etiket: `Kademeli indirim (%${ind.oran})`, tutar: ind.indirim } : null,
+          toplam: ind.toplam,
+        }
+      : onizleme?.tur === "paket"
+        ? (() => {
+            const f = paketFiyat(onizleme.paket, sunucuSimdi);
+            return {
+              baslik: onizleme.paket.ad,
+              kalemler: [
+                {
+                  ad: "Hazır influencer paketi",
+                  not:
+                    (onizleme.paket.adet ? `${onizleme.paket.adet} ${onizleme.paket.birim}` : "") +
+                    (onizleme.paket.icerik ? (onizleme.paket.adet ? " · " : "") + onizleme.paket.icerik : ""),
+                  tutar: f.normal,
+                },
+              ],
+              ara: f.normal,
+              indirim: f.kampanya ? { etiket: `Süreli fırsat (%${f.oran})`, tutar: Math.round((f.normal - f.final) * 100) / 100 } : null,
+              toplam: f.final,
+            };
+          })()
+        : null;
+
+  const formAlanlari = (
+    <>
+      <label className="im-lab" htmlFor="im-link">TANITILACAK İÇERİK LİNKİ</label>
+      <input id="im-link" className="im-in" type="url" placeholder="Şarkı, video veya profil linki (https://…)" value={link} onChange={(e) => setLink(e.target.value)} />
+
+      <label className="im-lab" htmlFor="im-name">ADIN SOYADIN</label>
+      <input id="im-name" className="im-in" type="text" placeholder="Adın Soyadın" value={name} onChange={(e) => setName(e.target.value)} />
+
+      <label className="im-lab" htmlFor="im-contact">E-POSTA VEYA TELEFON</label>
+      <input id="im-contact" className="im-in" type="text" placeholder="Sana ulaşabilmemiz için" value={contact} onChange={(e) => setContact(e.target.value)} />
+
+      <label className="im-lab" htmlFor="im-brief">KAMPANYA DETAYI (isteğe bağlı)</label>
+      <textarea id="im-brief" className="im-in" rows={3} placeholder="Tanıtılacak şarkı, ürün veya kampanya hakkında bilgi yaz…" value={brief} onChange={(e) => setBrief(e.target.value)} />
+    </>
+  );
+
+  const basari = doneCode ? (
+    <p className="im-msg">
+      <strong>Siparişin alındı ✓</strong>
+      <br />
+      Sipariş kodun: <strong>{doneCode}</strong>
+      <br />
+      Siparişini <a href="/panel" style={{ textDecoration: "underline" }}>Hesabım → Siparişlerim</a> bölümünden takip edebilirsin.
+    </p>
+  ) : null;
+
   return (
     <main className="im-root">
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-
 
       <div className="im-wrap">
         <section className="im-hero">
           <div>
             <span className="im-pill">HITY7 / CREATOR MARKETPLACE</span>
             <h1>ETKİYİ<br /><span>BAŞLAT.</span></h1>
-            <p>Projeni doğru içerik üreticileriyle buluştur. Influencer’larını seç, linkini ekle, siparişini oluştur.</p>
+            <p>Projeni doğru içerik üreticileriyle buluştur. Influencer’larını kendin seç ya da hazır paketlerden birini al.</p>
           </div>
           <div className={`im-count ${tiktokOn && count >= TIKTOK_MIN ? "ok" : ""}`} aria-live="polite">
             <strong>
@@ -301,174 +520,283 @@ export default function InfluencerMarketingPage() {
           </div>
         </section>
 
-        <section className="im-tt" aria-labelledby="im-tt-baslik">
-          <div style={{ position: "relative", zIndex: 1 }}>
-            <span className="im-tt-eye">♪ TIKTOK KAMPANYASI · MİNİMUM {TIKTOK_MIN} INFLUENCER</span>
-            <h2 id="im-tt-baslik">
-              TIKTOK’TA <span>AKIM</span> BAŞLAT!
-            </h2>
+        {/* İndirim kademeleri + önemli bilgilendirme */}
+        <section className="im-bilgi" aria-label="İndirimler ve bilgilendirme">
+          <div className="im-tiers">
+            <span className="im-pill">BİREYSEL SEÇİM İNDİRİMİ</span>
+            <h3>Ne kadar çok, o kadar avantaj.</h3>
+            <div className="im-tier-row">
+              {[...INDIRIM_KADEMELERI].reverse().map((k) => (
+                <div key={k.esik} className={`im-tier ${mod === "sec" && ind.oran === k.oran ? "on" : ""}`}>
+                  <b>%{k.oran}</b>
+                  <small>{k.esik.toLocaleString("tr-TR")} TL ve üzeri</small>
+                </div>
+              ))}
+            </div>
             <p>
-              Bir içeriğin TikTok’ta akıma dönüşmesi için aynı dönemde çok sayıda farklı hesapta yayınlanması gerekir. Bu yüzden TikTok
-              Video kampanyaları <b>en az {TIKTOK_MIN} farklı influencer</b> ile oluşturulur; {TIKTOK_MIN} hesap seçilmeden sipariş
-              verilemez.
+              İndirimler birikmez: seçtiğin influencerların indirimsiz toplamına göre <b>tek bir oran</b> uygulanır (en fazla %20).
+              Hazır paketlerde bu indirimler geçerli değildir; paketlerde yalnızca süreli kampanyalar uygulanır.
             </p>
-            <div className="im-tt-rules">
-              <span>✓ En az {TIKTOK_MIN} farklı hesap</span>
-              <span>✓ Aynı hesap iki kez seçilemez</span>
-              <span>✓ Instagram Reels için en az 1 hesap yeterli</span>
-            </div>
           </div>
-          <div className="im-tt-meter" aria-live="polite">
-            <small>{tiktokOn ? "TIKTOK İÇİN SEÇİLEN" : "TIKTOK SEÇİLİ DEĞİL"}</small>
-            <div className="im-tt-num">
-              <strong>{count}</strong>
-              <span>/{TIKTOK_MIN}</span>
+          <div className="im-uyari" role="note">
+            <strong>ÖNEMLİ BİLGİLENDİRME</strong>
+            <p>“{ONEMLI_BILGI}”</p>
+            <div className="im-uyari-btns">
+              <a href="/destek" className="dolu">DESTEK TALEBİ OLUŞTUR ↗</a>
+              <a href="/bakiye">BAKİYE YÜKLE ↗</a>
             </div>
-            <div
-              className="im-bar"
-              role="progressbar"
-              aria-label="TikTok için seçilen influencer"
-              aria-valuemin={0}
-              aria-valuemax={TIKTOK_MIN}
-              aria-valuenow={Math.min(count, TIKTOK_MIN)}
-            >
-              <i style={{ width: `${pct}%` }} />
-            </div>
-            <p className="im-tt-status">
-              {!tiktokOn
-                ? `Şu an yalnızca Instagram Reels seçili. TikTok Video eklersen en az ${TIKTOK_MIN} farklı influencer gerekir.`
-                : count >= TIKTOK_MIN
-                  ? "✓ Minimum sağlandı. TikTok kampanyan siparişe hazır."
-                  : `${TIKTOK_MIN - count} farklı influencer daha seçmelisin.`}
-            </p>
-            {tiktokOn && availableAccounts < TIKTOK_MIN && (
-              <p className="im-note" style={{ marginTop: 8 }}>
-                {isSample
-                  ? "Şu an örnek profiller gösteriliyor. Gerçek influencerlar eklendiğinde TikTok kampanyası oluşturabilirsin."
-                  : `Listede şu an ${availableAccounts} farklı hesap var. ${TIKTOK_MIN} hesaba ulaşıldığında TikTok kampanyası oluşturulabilir.`}
-              </p>
-            )}
-            {!tiktokOn && (
-              <button type="button" className="im-btn im-tt-add" onClick={() => toggleCampaign(TIKTOK)}>
-                TIKTOK VIDEO EKLE +
-              </button>
-            )}
           </div>
         </section>
 
-        <div className="im-layout">
-          <section>
-            <div className="im-sec-title">
-              <h2>Influencer’lar</h2>
-              <small>{String(creators.length).padStart(2, "0")} CREATOR</small>
+        <div className="im-mod" role="tablist" aria-label="Sipariş türü">
+          <button type="button" role="tab" aria-selected={mod === "sec"} className={mod === "sec" ? "on" : ""} onClick={() => { setMod("sec"); setNotice(""); }}>
+            ★ INFLUENCERLARI KENDİN SEÇ
+          </button>
+          <button type="button" role="tab" aria-selected={mod === "paket"} className={mod === "paket" ? "on" : ""} onClick={() => { setMod("paket"); setNotice(""); }}>
+            ▣ HAZIR INFLUENCER PAKETLERİ
+          </button>
+        </div>
+
+        {mod === "sec" && (
+          <section className="im-tt" aria-labelledby="im-tt-baslik">
+            <div style={{ position: "relative", zIndex: 1 }}>
+              <span className="im-tt-eye">♪ TIKTOK KAMPANYASI · MİNİMUM {TIKTOK_MIN} INFLUENCER</span>
+              <h2 id="im-tt-baslik">
+                TIKTOK’TA <span>AKIM</span> BAŞLAT!
+              </h2>
+              <p>
+                Bir içeriğin TikTok’ta akıma dönüşmesi için aynı dönemde birden fazla farklı hesapta yayınlanması gerekir. Bu yüzden
+                kendi seçtiğin TikTok Video kampanyaları <b>en az {TIKTOK_MIN} farklı influencer</b> ile oluşturulur. Hazır paketlerde
+                bu sınır yoktur.
+              </p>
+              <div className="im-tt-rules">
+                <span>✓ En az {TIKTOK_MIN} farklı hesap</span>
+                <span>✓ Aynı hesap iki kez seçilemez</span>
+                <span>✓ Instagram Reels için en az 1 hesap yeterli</span>
+              </div>
             </div>
-
-            <div className="im-grid">
-              {creators.map(c => {
-                const on = selected.includes(c.id);
-                // Aynı hesap başka bir kayıtla zaten seçiliyse bu kart seçilemez
-                const dup = !on && selectedAccounts.has(accountOf(c));
-                return (
-                  <article key={c.id} className={`im-card ${on ? "sel" : ""} ${dup ? "dup" : ""}`}>
-                    <div className="im-photo">
-                      {c.image ? <img src={c.image} alt={c.name} loading="lazy" /> : c.name.slice(0, 1).toUpperCase()}
-                      <span className="im-lvl">{levelOf(c.followerCount)}</span>
-                      {on && <span className="im-chk">SEÇİLDİ ✓</span>}
-                      {dup && <span className="im-dup">AYNI HESAP SEÇİLİ</span>}
-                    </div>
-                    <div className="im-body">
-                      <div className="im-name">
-                        <div>
-                          <h3>{c.name}</h3>
-                          <span>{c.username}</span>
-                        </div>
-                        <div className="im-fol">
-                          <strong>{fmtFollowers(c.followerCount)}</strong>
-                          <small>TAKİPÇİ</small>
-                        </div>
-                      </div>
-
-                      <div className="im-price">
-                        <div>
-                          <b>{tl(c.price)}</b>
-                          <small>{isSample ? "ÖRNEK ÜCRET" : "PAYLAŞIM ÜCRETİ"}</small>
-                        </div>
-                        <button
-                          type="button"
-                          className={`im-btn ${on ? "rm" : ""}`}
-                          onClick={() => toggleCreator(c)}
-                          disabled={dup}
-                          aria-pressed={on}
-                          title={dup ? "Bu hesap başka bir kayıtla zaten seçili" : undefined}
-                        >
-                          {on ? "ÇIKAR −" : dup ? "SEÇİLİ HESAP" : "SEÇ +"}
-                        </button>
-                      </div>
-
-                      {(c.tiktokUrl || c.instagramUrl || c.youtubeUrl) && (
-                        <div className="im-socials">
-                          {c.tiktokUrl && <a className="im-soc" href={c.tiktokUrl} target="_blank" rel="noopener noreferrer">♪ TikTok</a>}
-                          {c.instagramUrl && <a className="im-soc" href={c.instagramUrl} target="_blank" rel="noopener noreferrer">◎ Instagram</a>}
-                          {c.youtubeUrl && <a className="im-soc" href={c.youtubeUrl} target="_blank" rel="noopener noreferrer">▶ YouTube</a>}
-                        </div>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
+            <div className="im-tt-meter" aria-live="polite">
+              <small>{tiktokOn ? "TIKTOK İÇİN SEÇİLEN" : "TIKTOK SEÇİLİ DEĞİL"}</small>
+              <div className="im-tt-num">
+                <strong>{count}</strong>
+                <span>/{TIKTOK_MIN}</span>
+              </div>
+              <div className="im-bar" role="progressbar" aria-label="TikTok için seçilen influencer" aria-valuemin={0} aria-valuemax={TIKTOK_MIN} aria-valuenow={Math.min(count, TIKTOK_MIN)}>
+                <i style={{ width: `${pct}%` }} />
+              </div>
+              <p className="im-tt-status">
+                {!tiktokOn
+                  ? `Şu an yalnızca Instagram Reels seçili. TikTok Video eklersen en az ${TIKTOK_MIN} farklı influencer gerekir.`
+                  : count >= TIKTOK_MIN
+                    ? "✓ Minimum sağlandı. TikTok kampanyan siparişe hazır."
+                    : `${TIKTOK_MIN - count} farklı influencer daha seçmelisin.`}
+              </p>
+              {tiktokOn && availableAccounts < TIKTOK_MIN && (
+                <p className="im-note" style={{ marginTop: 8 }}>
+                  {isSample
+                    ? "Şu an örnek profiller gösteriliyor. Gerçek influencerlar eklendiğinde TikTok kampanyası oluşturabilirsin."
+                    : `Listede şu an ${availableAccounts} farklı hesap var. ${TIKTOK_MIN} hesaba ulaşıldığında TikTok kampanyası oluşturulabilir.`}
+                </p>
+              )}
+              {!tiktokOn && (
+                <button type="button" className="im-btn im-tt-add" onClick={() => toggleCampaign(TIKTOK)}>
+                  TIKTOK VIDEO EKLE +
+                </button>
+              )}
             </div>
-            {isSample && <p className="im-note" style={{ marginTop: 18 }}>Fotoğraflar ve profiller şimdilik örnek veridir. Gerçek influencerlar admin panelinden eklenince burada görünür.</p>}
           </section>
+        )}
+
+        <div className="im-layout">
+          {mod === "sec" ? (
+            <section>
+              <div className="im-sec-title">
+                <h2>Influencer’lar</h2>
+                <small>{String(creators.length).padStart(2, "0")} CREATOR</small>
+              </div>
+
+              <div className="im-grid">
+                {creators.map((c) => {
+                  const on = selected.includes(c.id);
+                  // Aynı hesap başka bir kayıtla zaten seçiliyse bu kart seçilemez
+                  const dup = !on && selectedAccounts.has(accountOf(c));
+                  return (
+                    <article key={c.id} className={`im-card ${on ? "sel" : ""} ${dup ? "dup" : ""}`}>
+                      <div className="im-photo">
+                        {c.image ? <img src={c.image} alt={c.name} loading="lazy" /> : c.name.slice(0, 1).toUpperCase()}
+                        <span className="im-lvl">{levelOf(c.followerCount)}</span>
+                        {on && <span className="im-chk">SEÇİLDİ ✓</span>}
+                        {dup && <span className="im-dup">AYNI HESAP SEÇİLİ</span>}
+                      </div>
+                      <div className="im-body">
+                        <div className="im-name">
+                          <div>
+                            <h3>{c.name}</h3>
+                            <span>{c.username}</span>
+                          </div>
+                          <div className="im-fol">
+                            <strong>{fmtFollowers(c.followerCount)}</strong>
+                            <small>TAKİPÇİ</small>
+                          </div>
+                        </div>
+
+                        <div className="im-price">
+                          <div>
+                            <b>{tl(c.price)}</b>
+                            <small>{isSample ? "ÖRNEK ÜCRET" : "PAYLAŞIM ÜCRETİ"}</small>
+                          </div>
+                          <button
+                            type="button"
+                            className={`im-btn ${on ? "rm" : ""}`}
+                            onClick={() => toggleCreator(c)}
+                            disabled={dup}
+                            aria-pressed={on}
+                            title={dup ? "Bu hesap başka bir kayıtla zaten seçili" : undefined}
+                          >
+                            {on ? "ÇIKAR −" : dup ? "SEÇİLİ HESAP" : "SEÇ +"}
+                          </button>
+                        </div>
+
+                        {(c.tiktokUrl || c.instagramUrl || c.youtubeUrl) && (
+                          <div className="im-socials">
+                            {c.tiktokUrl && <a className="im-soc" href={c.tiktokUrl} target="_blank" rel="noopener noreferrer">♪ TikTok</a>}
+                            {c.instagramUrl && <a className="im-soc" href={c.instagramUrl} target="_blank" rel="noopener noreferrer">◎ Instagram</a>}
+                            {c.youtubeUrl && <a className="im-soc" href={c.youtubeUrl} target="_blank" rel="noopener noreferrer">▶ YouTube</a>}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              {isSample && <p className="im-note" style={{ marginTop: 18 }}>Fotoğraflar ve profiller şimdilik örnek veridir. Gerçek influencerlar admin panelinden eklenince burada görünür.</p>}
+            </section>
+          ) : (
+            <section id="paketler">
+              <div className="im-sec-title">
+                <h2>Hazır paketler</h2>
+                <small>{String(paketler.length).padStart(2, "0")} PAKET</small>
+              </div>
+              {paketDurum === "load" && <p className="im-bos">Paketler yükleniyor…</p>}
+              {paketDurum === "hata" && <p className="im-bos">Paketler şu an okunamadı. Sayfayı yenileyip tekrar dene.</p>}
+              {(paketDurum === "yok" || (paketDurum === "ok" && paketler.length === 0)) && (
+                <p className="im-bos">Şu an satışta hazır paket yok. Influencerları kendin seçerek kampanyanı oluşturabilirsin.</p>
+              )}
+              {paketDurum === "ok" && paketler.length > 0 && (
+                <div className="im-pk-grid">
+                  {paketler.map((p) => {
+                    const f = paketFiyat(p, sunucuSimdi);
+                    const on = p.id === paketId;
+                    return (
+                      <article key={p.id} className={`im-pk ${on ? "sel" : ""}`}>
+                        <div className="im-pk-gorsel">
+                          {p.gorsel ? <img src={p.gorsel} alt={p.ad} loading="lazy" /> : p.ad.slice(0, 2).toUpperCase()}
+                          {f.kampanya && <span className="im-firsat">SÜRELİ FIRSAT</span>}
+                        </div>
+                        <div className="im-pk-body">
+                          <h3>{p.ad}</h3>
+                          {p.aciklama && <p>{p.aciklama}</p>}
+                          {(p.adet || p.icerik) && (
+                            <div className="im-pk-kapsam">
+                              {p.adet ? `${p.adet} ${p.birim}` : ""}
+                              {p.icerik ? (p.adet ? " · " : "") + p.icerik : ""}
+                            </div>
+                          )}
+                          {p.tur === "liste" && p.influencerlar.length > 0 && (
+                            <p style={{ fontSize: 12 }}>
+                              <b>Influencerlar:</b> {p.influencerlar.map((x) => x.ad).join(", ")}
+                            </p>
+                          )}
+                          {f.kampanya && (
+                            <span className="im-sayac" aria-live="off">
+                              ⏱ Kalan süre: {kalanSure(Date.parse(f.kampanya.bitis) - sunucuSimdi)}
+                            </span>
+                          )}
+                          <div className="im-pk-fiyat">
+                            <div>
+                              {f.kampanya && <span className="im-eski">{tlKurus(f.normal)}</span>}
+                              <b>
+                                {tlKurus(f.final)}
+                                {f.kampanya && <span className="im-yuzde">%{f.oran}</span>}
+                              </b>
+                            </div>
+                            <button type="button" className={`im-btn ${on ? "rm" : ""}`} onClick={() => { setPaketId(on ? "" : p.id); setNotice(""); setDoneCode(""); }} aria-pressed={on}>
+                              {on ? "SEÇİLDİ ✓" : "SEÇ +"}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
           <aside className="im-side">
             <span className="im-pill">SİPARİŞ OLUŞTUR</span>
-            <h2>Kampanyan</h2>
-            <p>Paylaşım türünü seç, linkini ekle. Tutar, seçtiğin influencer’ların ücretlerinin toplamıdır.</p>
+            <h2>{mod === "sec" ? "Kampanyan" : "Paket siparişi"}</h2>
+            <p>
+              {mod === "sec"
+                ? "Paylaşım türünü seç, linkini ekle. Tutar, seçtiğin influencer’ların ücretlerinin toplamıdır; kademeli indirim otomatik uygulanır."
+                : "Bir paket seç, linkini ekle ve siparişini doğrudan oluştur. Pakette en az influencer şartı yoktur."}
+            </p>
 
-            <label className="im-lab">PAYLAŞIM TÜRÜ</label>
-            <div className="im-opts">
-              {["TikTok Video", "Instagram Reels"].map(t => (
-                <button key={t} type="button" className={`im-opt ${campaignTypes.includes(t) ? "on" : ""}`} onClick={() => toggleCampaign(t)}>
-                  <strong>{campaignTypes.includes(t) ? "✓ " : ""}{t}</strong>
-                  <small>{t === "TikTok Video" ? "TikTok’ta video paylaşımı" : "Instagram’da Reels paylaşımı"}</small>
-                </button>
-              ))}
-            </div>
-            <p className="im-note">Bazı TikTok içerik üreticileri Reels paylaşmayabilir. Sipariş öncesi influencer’ın seçtiğin platformda paylaşım yaptığını kontrol et.</p>
-
-            <label className="im-lab" htmlFor="im-link">TANITILACAK İÇERİK LİNKİ</label>
-            <input id="im-link" className="im-in" type="url" placeholder="Şarkı, video veya profil linki (https://…)" value={link} onChange={e => setLink(e.target.value)} />
-
-            <label className="im-lab" htmlFor="im-name">ADIN SOYADIN</label>
-            <input id="im-name" className="im-in" type="text" placeholder="Adın Soyadın" value={name} onChange={e => setName(e.target.value)} />
-
-            <label className="im-lab" htmlFor="im-contact">E-POSTA VEYA TELEFON</label>
-            <input id="im-contact" className="im-in" type="text" placeholder="Sana ulaşabilmemiz için" value={contact} onChange={e => setContact(e.target.value)} />
-
-            <label className="im-lab" htmlFor="im-brief">KAMPANYA DETAYI (isteğe bağlı)</label>
-            <textarea id="im-brief" className="im-in" rows={3} placeholder="Tanıtılacak şarkı, ürün veya kampanya hakkında bilgi yaz…" value={brief} onChange={e => setBrief(e.target.value)} />
-
-            <div className="im-sum">
-              <div className="im-line"><span>Paylaşım türü</span><strong>{campaignTypes.length ? campaignTypes.join(" + ") : "—"}</strong></div>
-              <div className="im-line">
-                <span>Influencer sayısı</span>
-                <strong>{tiktokOn ? `${count} / ${TIKTOK_MIN}` : count}</strong>
-              </div>
-              {selectedCreators.map(c => (
-                <div className="im-line" key={c.id}><span>{c.name}</span><strong>{tl(c.price)}</strong></div>
-              ))}
-              <div className="im-total"><span>TOPLAM</span><strong>{tl(total)}</strong></div>
-            </div>
-
-            {doneCode ? (
-              <p className="im-msg">
-                <strong>Siparişin alındı ✓</strong><br />
-                Sipariş kodun: <strong>{doneCode}</strong><br />
-                Destek ekibiyle yazışırken bu kodu kullanabilirsin.
-              </p>
-            ) : (
+            {mod === "sec" && (
               <>
-                {tiktokOn && (
+                <label className="im-lab">PAYLAŞIM TÜRÜ</label>
+                <div className="im-opts">
+                  {["TikTok Video", "Instagram Reels"].map((t) => (
+                    <button key={t} type="button" className={`im-opt ${campaignTypes.includes(t) ? "on" : ""}`} onClick={() => toggleCampaign(t)}>
+                      <strong>{campaignTypes.includes(t) ? "✓ " : ""}{t}</strong>
+                      <small>{t === "TikTok Video" ? "TikTok’ta video paylaşımı" : "Instagram’da Reels paylaşımı"}</small>
+                    </button>
+                  ))}
+                </div>
+                <p className="im-note">Bazı TikTok içerik üreticileri Reels paylaşmayabilir. Sipariş öncesi influencer’ın seçtiğin platformda paylaşım yaptığını kontrol et.</p>
+              </>
+            )}
+
+            {formAlanlari}
+
+            {mod === "sec" ? (
+              <div className="im-sum">
+                <div className="im-line"><span>Paylaşım türü</span><strong>{campaignTypes.length ? campaignTypes.join(" + ") : "—"}</strong></div>
+                <div className="im-line">
+                  <span>Seçilen influencer</span>
+                  <strong>{tiktokOn ? `${count} / ${TIKTOK_MIN}` : count}</strong>
+                </div>
+                {selectedCreators.map((c) => (
+                  <div className="im-line" key={c.id}><span>{c.name}</span><strong>{tl(c.price)}</strong></div>
+                ))}
+                <div className="im-line"><span>İndirimsiz toplam</span><strong className={ind.oran > 0 ? "im-eski" : ""}>{tlKurus(ind.brut)}</strong></div>
+                <div className="im-line"><span>Kazanılan indirim</span><strong className={ind.oran > 0 ? "im-ind" : ""}>{ind.oran > 0 ? `%${ind.oran} · −${tlKurus(ind.indirim)}` : "—"}</strong></div>
+                <div className="im-total"><span>ÖDENECEK</span><strong>{tlKurus(ind.toplam)}</strong></div>
+                {ind.sonraki && selected.length > 0 && (
+                  <p className="im-next">
+                    {tlKurus(ind.sonraki.kalan)} daha seçersen indirimin <b>%{ind.sonraki.oran}</b> olur ({ind.sonraki.esik.toLocaleString("tr-TR")} TL ve üzeri).
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="im-sum">
+                <div className="im-line"><span>Paket</span><strong>{seciliPaket ? seciliPaket.ad : "—"}</strong></div>
+                {seciliPaket && seciliFiyat && (
+                  <>
+                    <div className="im-line"><span>Normal fiyat</span><strong className={seciliFiyat.kampanya ? "im-eski" : ""}>{tlKurus(seciliFiyat.normal)}</strong></div>
+                    {seciliFiyat.kampanya && (
+                      <div className="im-line"><span>Süreli fırsat</span><strong className="im-ind">%{seciliFiyat.oran} · −{tlKurus(Math.round((seciliFiyat.normal - seciliFiyat.final) * 100) / 100)}</strong></div>
+                    )}
+                  </>
+                )}
+                <div className="im-total"><span>ÖDENECEK</span><strong>{seciliFiyat ? tlKurus(seciliFiyat.final) : "—"}</strong></div>
+              </div>
+            )}
+
+            {basari}
+            {!basari && (
+              <>
+                {mod === "sec" && tiktokOn && (
                   <div className={`im-req ${count >= TIKTOK_MIN ? "ok" : ""}`} aria-live="polite">
                     <div className="im-req-top">
                       <span>TIKTOK MİNİMUMU</span>
@@ -487,30 +815,53 @@ export default function InfluencerMarketingPage() {
                   </div>
                 )}
                 <SozlesmeOnay tur="siparis" checked={onay} onChange={setOnay} />
-                <button
-                  type="button"
-                  className="im-btn im-submit"
-                  onClick={submitOrder}
-                  disabled={sending || missing > 0}
-                  title={missing > 0 ? (tiktokOn ? `TikTok için en az ${TIKTOK_MIN} farklı influencer seçmelisin` : "En az 1 influencer seç") : undefined}
-                >
-                  {sending
-                    ? "GÖNDERİLİYOR…"
-                    : missing > 0
+                {mod === "sec" ? (
+                  <button
+                    type="button"
+                    className="im-btn im-submit"
+                    onClick={bireyselOnizle}
+                    disabled={sending || missing > 0}
+                    title={missing > 0 ? (tiktokOn ? `TikTok için en az ${TIKTOK_MIN} farklı influencer seçmelisin` : "En az 1 influencer seç") : undefined}
+                  >
+                    {missing > 0
                       ? tiktokOn
                         ? `${missing} INFLUENCER DAHA SEÇ (${count}/${TIKTOK_MIN})`
                         : "EN AZ 1 INFLUENCER SEÇ"
-                      : "SİPARİŞİ OLUŞTUR ↗"}
-                </button>
-                {!tiktokOn && campaignTypes.includes(REELS) && (
+                      : "SİPARİŞ VER ↗"}
+                  </button>
+                ) : (
+                  <button type="button" className="im-btn im-submit" onClick={paketOnizle} disabled={sending || !seciliPaket}>
+                    {seciliPaket ? "ŞİMDİ SATIN AL ↗" : "BİR PAKET SEÇ"}
+                  </button>
+                )}
+                {mod === "sec" && !tiktokOn && campaignTypes.includes(REELS) && (
                   <p className="im-note">Yalnızca Instagram Reels kampanyalarında {TIKTOK_MIN} influencer şartı yoktur; 1 influencer yeterlidir.</p>
                 )}
               </>
             )}
             {notice && <p className="im-msg" role="alert">{notice}</p>}
+            {eksik !== null && eksik > 0 && !onizleme && (
+              <a className="im-topup" href={bakiyeYukleAdresi(eksik)}>YETERSİZ BAKİYE — BAKİYE YÜKLE ↗</a>
+            )}
           </aside>
         </div>
       </div>
+
+      {oniz && (
+        <SiparisOnizleme
+          acik
+          baslik={oniz.baslik}
+          kalemler={oniz.kalemler}
+          araToplam={oniz.ara}
+          indirim={oniz.indirim}
+          toplam={oniz.toplam}
+          gonderiliyor={sending}
+          hata={onizHata}
+          eksik={eksik}
+          onOnayla={siparisVer}
+          onKapat={() => setOnizleme(null)}
+        />
+      )}
 
       <footer className="im-foot">
         <div className="im-wrap im-foot-in">

@@ -5,18 +5,19 @@
  * Kök layout'ta tüm sayfalara otomatik eklenen:
  *  - sabit (sticky) site menüsü (aktif sayfa adres çubuğundan bulunur)
  *  - yönetim panelinden açılan duyuru şeridi (Site Yazıları → Duyuru)
- *  - bakım modu ekranı (Ayarlar → Bakım modu). Yöneticiler siteyi bakımda da görür.
+ *  - site kapalı ekranı (Site Yazıları → Site Yayında). Asıl kapatma sunucuda (proxy.ts) yapılır; bu perde yalnızca
+ *    önbellekteki eski sayfalar için yedektir. Yalnızca CEO ve CEO'nun izin verdiği roller siteyi kapalıyken görür.
  * HIDE_ON listesindeki sayfalarda (yönetim paneli) gösterilmez.
  */
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import SiteMenu from "./SiteMenu";
 import { useSiteContent } from "../lib/use-site-content";
-import { getSupabase } from "../lib/supabase";
+import { useRol } from "../lib/use-rol";
+import { bakimdaGirebilir } from "../lib/erisim";
 
 const HIDE_ON = ["/ceo"];
-/** Bakım modunda da açık kalan sayfalar (giriş yapabilmek için) */
-const MAINTENANCE_EXEMPT = ["/ceo", "/giris", "/kayit"];
+/** Bakım modunda da açık kalan sayfalar (giriş yapabilmek için). Asıl engel sunucuda (proxy.ts) uygulanır. */
+const MAINTENANCE_EXEMPT = ["/ceo", "/giris", "/kayit", "/sifre-yenile", "/bakim", "/erisim-yok", "/yasal"];
 
 const CSS = `
 .h7-duyuru{background:#f5c518;border-bottom:3px solid #111;color:#111;font-family:Inter,"Helvetica Neue",Arial,sans-serif;font-size:13px;font-weight:700;text-align:center;padding:9px 16px;line-height:1.45}
@@ -32,29 +33,12 @@ export default function GlobalMenu() {
   const path = usePathname() || "/";
   const content = useSiteContent();
   const g = content.general;
-  const [staff, setStaff] = useState(false);
-
-  // Bakım modunda yöneticiler siteyi görmeye devam eder
-  useEffect(() => {
-    if (!g.maintenance) return;
-    let alive = true;
-    (async () => {
-      try {
-        const sb = getSupabase();
-        const { data } = await sb.auth.getSession();
-        const uid = data.session?.user.id;
-        if (!uid) return;
-        const { data: p } = await sb.from("profiles").select("role,banned").eq("id", uid).maybeSingle();
-        const row = p as { role?: string; banned?: boolean } | null;
-        if (alive && row && !row.banned && ["ceo", "admin", "mod", "amele"].includes(String(row.role))) setStaff(true);
-      } catch {
-        /* sessizce geç */
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [g.maintenance]);
+  // Oturum ↔ sunucu çerezi eşitlemesi tüm sayfalarda (yönetim paneli dahil) burada başlar
+  const rol = useRol();
+  // Site kapalıyken girebilenler: CEO ve Site Yayında ayarında izin verilen roller (sunucudaki kuralın aynısı).
+  // Rol henüz bilinmiyorsa perde gösterilmez: yetkisiz isteği sunucu zaten bakım sayfasına yönlendirir.
+  const yetkili = rol !== "load" && bakimdaGirebilir(content.erisim, rol);
+  const staff = rol === "load" || yetkili;
 
   if (HIDE_ON.some((p) => path === p || path.startsWith(p + "/"))) return null;
   const active = "/" + (path.split("/")[1] || "");
@@ -64,9 +48,12 @@ export default function GlobalMenu() {
   return (
     <>
       <SiteMenu active={active} />
-      {announcement || inMaintenance || (g.maintenance && staff) ? <style dangerouslySetInnerHTML={{ __html: CSS }} /> : null}
-      {g.maintenance && staff && (
-        <div className="h7-duyuru" role="status">Bakım modu AÇIK — ziyaretçiler siteyi göremiyor, sen yönetici olarak görüyorsun.</div>
+      {announcement || inMaintenance || content._onizleme || (g.maintenance && yetkili) ? <style dangerouslySetInnerHTML={{ __html: CSS }} /> : null}
+      {g.maintenance && yetkili && (
+        <div className="h7-duyuru" role="status">Site KAPALI — ziyaretçiler ve üyeler bakım ekranını görüyor; sen yetkili olarak görüyorsun.</div>
+      )}
+      {content._onizleme && (
+        <div className="h7-duyuru" role="status">ÖNİZLEME — kaydedilmemiş değişiklikleri yalnızca sen görüyorsun. Yayına almak için CEO panelinde “Kaydet”e bas.</div>
       )}
       {announcement && !inMaintenance && (
         <div className="h7-duyuru" role="status">{announcement}</div>

@@ -6,28 +6,28 @@
  * Ödeme Yöntemleri, örnek ses alanları ve patron karakteri.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { getSupabase } from "../../lib/supabase";
 import { OrderWorkbench, rpcCall, smmBulkRefresh } from "./ceo-extra";
 
-type SB = NonNullable<ReturnType<typeof getSupabase>>;
-type Notify = (text: string) => void;
+export type SB = NonNullable<ReturnType<typeof getSupabase>>;
+export type Notify = (text: string) => void;
 
 /* ================================================================== */
 /*  ORTAK PARÇALAR                                                     */
 /* ================================================================== */
 
-const card = "rounded-3xl border-[2.5px] border-[#111] bg-white";
-const inputCls = "field w-full rounded-2xl border-[2.5px] border-[#111] bg-white px-4 py-3 text-base outline-none transition";
-const btnPrimary =
+export const card = "rounded-3xl border-[2.5px] border-[#111] bg-white";
+export const inputCls = "field w-full rounded-2xl border-[2.5px] border-[#111] bg-white px-4 py-3 text-base outline-none transition";
+export const btnPrimary =
   "rounded-full border-[2.5px] border-[#111] bg-[#f5c518] px-5 py-3 text-sm font-bold text-[#111] shadow-[0_4px_0_#111] transition hover:-translate-y-0.5 hover:bg-[#e5b600] hover:shadow-[0_6px_0_#111] active:translate-y-[2px] active:shadow-[0_1px_0_#111] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0";
-const btnGhost = "rounded-full border-[2.5px] border-[#111] bg-white px-4 py-2 text-xs font-bold transition hover:bg-[#f5c518] disabled:opacity-50";
+export const btnGhost = "rounded-full border-[2.5px] border-[#111] bg-white px-4 py-2 text-xs font-bold transition hover:bg-[#f5c518] disabled:opacity-50";
 
-const tl = (n: number) => new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(n || 0) + " TL";
-const fmt = (n: number) => new Intl.NumberFormat("tr-TR").format(n || 0);
-const dateTr = (s: string) => new Date(s).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+export const tl = (n: number) => new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(n || 0) + " TL";
+export const fmt = (n: number) => new Intl.NumberFormat("tr-TR").format(n || 0);
+export const dateTr = (s: string) => new Date(s).toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
 
-function Head({ eyebrow, title, desc }: { eyebrow: string; title: string; desc?: string }) {
+export function Head({ eyebrow, title, desc }: { eyebrow: string; title: string; desc?: string }) {
   return (
     <div className="mb-7">
       <p className="mb-3 inline-flex items-center gap-2 rounded-full border-2 border-[#111] bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em]">{eyebrow}</p>
@@ -37,7 +37,7 @@ function Head({ eyebrow, title, desc }: { eyebrow: string; title: string; desc?:
   );
 }
 
-function Field({
+export function Field({
   label,
   value,
   onChange,
@@ -63,7 +63,7 @@ function Field({
   );
 }
 
-function StatBox({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function StatBox({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className={`${card} p-5`}>
       <div className="text-sm text-[#686868]">{label}</div>
@@ -73,7 +73,7 @@ function StatBox({ label, value, sub }: { label: string; value: string; sub?: st
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+export function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -85,12 +85,12 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function Badge({ tone, children }: { tone: "yellow" | "ink" | "plain"; children: React.ReactNode }) {
+export function Badge({ tone, children }: { tone: "yellow" | "ink" | "plain"; children: React.ReactNode }) {
   const cls = tone === "yellow" ? "bg-[#f5c518] text-[#111]" : tone === "ink" ? "bg-[#111] text-[#f5c518]" : "bg-[#fff6cf] text-[#111]";
   return <span className={`inline-block rounded-full border-2 border-[#111] px-2.5 py-0.5 text-[11px] font-bold ${cls}`}>{children}</span>;
 }
 
-function Empty({ title, text }: { title: string; text: string }) {
+export function Empty({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-3xl border-[2.5px] border-dashed border-[#111] bg-white px-6 py-14 text-center">
       <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full border-[2.5px] border-[#111] bg-[#f5c518] text-xl">◇</div>
@@ -100,7 +100,7 @@ function Empty({ title, text }: { title: string; text: string }) {
   );
 }
 
-function SetupNote({ message }: { message: string }) {
+export function SetupNote({ message }: { message: string }) {
   return (
     <p role="alert" className="mb-5 rounded-2xl border-[2.5px] border-[#111] bg-[#fff6cf] p-4 text-sm font-semibold">
       {message} <span className="font-normal">Supabase’de <code>supabase.sql</code> dosyasının güncel halini çalıştırdığından emin ol.</span>
@@ -108,7 +108,7 @@ function SetupNote({ message }: { message: string }) {
   );
 }
 
-function AddRow({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+export function AddRow({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -123,7 +123,7 @@ function AddRow({ onClick, children }: { onClick: () => void; children: React.Re
 
 const safeName = (n: string) => n.normalize("NFKD").replace(/[^\w.\-]+/g, "-").slice(-80);
 
-async function uploadMedia(sb: SB, file: Blob, folder: string, name: string, contentType?: string) {
+export async function uploadMedia(sb: SB, file: Blob, folder: string, name: string, contentType?: string) {
   const path = `${folder}/${Date.now()}-${safeName(name)}`;
   const { error } = await sb.storage.from("site-media").upload(path, file, { contentType: contentType || (file as File).type || undefined });
   if (error) throw new Error(error.message);
@@ -131,7 +131,7 @@ async function uploadMedia(sb: SB, file: Blob, folder: string, name: string, con
 }
 
 /** Fotoğrafı kare kırpıp 640px'e küçültür (JPEG). */
-function squarePhoto(file: File): Promise<Blob> {
+export function squarePhoto(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -543,6 +543,8 @@ export function WalletTab({ sb, notify, canAdjust = false }: { sb: SB; notify: N
   const [note, setNote] = useState("");
   const [dir, setDir] = useState<"ekle" | "dus">("ekle");
   const [busy, setBusy] = useState(false);
+  // Çift işlem önlemi: aynı düzeltme denemesi (üye + tutar + yön + gerekçe) için aynı işlem kimliği gönderilir
+  const istekRef = useRef<{ sig: string; key: string } | null>(null);
 
   const load = useCallback(async () => {
     const [t, p] = await Promise.all([
@@ -602,13 +604,39 @@ export function WalletTab({ sb, notify, canAdjust = false }: { sb: SB; notify: N
     if (note.trim().length < 5) return notify("Gerekçe zorunlu (en az 5 karakter).");
     const p = people.find((x) => x.id === who);
     if (!confirm(`${p?.full_name || p?.email || "Üye"} hesabına ${tl(amt)} ${dir === "ekle" ? "EKLENECEK" : "DÜŞÜLECEK"}.\nGerekçe: ${note.trim()}\n\nOnaylıyor musun?`)) return;
+    if (busy) return;
+    const sig = JSON.stringify([who, amt, dir, note.trim()]);
+    if (!istekRef.current || istekRef.current.sig !== sig) {
+      const key = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      istekRef.current = { sig, key };
+    }
     setBusy(true);
-    const r = await rpcCall<{ once: number; sonra: number }>(sb, "h7_bakiye_duzelt", { p_uye: who, p_tutar: amt, p_yon: dir, p_gerekce: note.trim() });
+    const r = await rpcCall<{ once: number | null; sonra: number; tekrar?: boolean }>(sb, "h7_bakiye_duzelt", {
+      p_uye: who,
+      p_tutar: amt,
+      p_yon: dir,
+      p_gerekce: note.trim(),
+      p_istek: istekRef.current.key,
+    });
     setBusy(false);
-    if (!r.ok) return notify("Düzeltme yapılamadı: " + r.error);
+    // Gerçek hata nedeni gösterilir; başarısız işlem başarılı gibi gösterilmez
+    if (!r.ok) {
+      const e = String(r.error || "");
+      return notify(
+        "Düzeltme yapılamadı: " +
+          (/h7_bakiye_duzelt|function .* does not exist|PGRST202/i.test(e)
+            ? "veritabanı kurulumu eksik (migration 02 ve 08 canlıya uygulanmalı)."
+            : e)
+      );
+    }
+    istekRef.current = null;
     setAmount("");
     setNote("");
-    notify(`Bakiye düzeltildi: ${tl(Number(r.data?.once))} → ${tl(Number(r.data?.sonra))}`);
+    notify(
+      r.data?.tekrar
+        ? `Bu düzeltme zaten uygulanmıştı (ikinci kez uygulanmadı). Güncel bakiye: ${tl(Number(r.data?.sonra))}`
+        : `Bakiye düzeltildi: ${tl(Number(r.data?.once))} → ${tl(Number(r.data?.sonra))}`
+    );
     load();
   }
 
@@ -743,19 +771,33 @@ type Infl = {
   sort: number;
 };
 
-type InflForm = { name: string; username: string; followers: string; price: string; tiktok: string; instagram: string; youtube: string };
-const emptyInfl: InflForm = { name: "", username: "", followers: "", price: "", tiktok: "", instagram: "", youtube: "" };
+type InflForm = { name: string; username: string; followers: string; price: string; tiktok: string; instagram: string; youtube: string; cost: string };
+const emptyInfl: InflForm = { name: "", username: "", followers: "", price: "", tiktok: "", instagram: "", youtube: "", cost: "" };
+
+/** Brüt kâr önizlemesi (kuruş hassasiyetinde). Maliyet girilmemişse null: 0 TL varsayılmaz. */
+export function karOnizleme(fiyat: number, maliyet: number | null): { kar: number; marj: number } | null {
+  if (maliyet === null || !Number.isFinite(maliyet)) return null;
+  const f = Math.round(fiyat * 100);
+  const m = Math.round(maliyet * 100);
+  const k = f - m;
+  return { kar: k / 100, marj: f > 0 ? Math.round((k * 10000) / f) / 100 : 0 };
+}
 
 function InflEditor({
   sb,
   notify,
   editing,
   onDone,
+  isCeo = false,
+  cost = null,
 }: {
   sb: SB;
   notify: Notify;
   editing: Infl | null;
   onDone: () => void;
+  /** Gerçek alış maliyeti yalnızca CEO'ya gösterilir ve yalnızca CEO yazabilir (veritabanında da RLS ile korunur) */
+  isCeo?: boolean;
+  cost?: number | null;
 }) {
   const [f, setF] = useState<InflForm>(
     editing
@@ -767,6 +809,7 @@ function InflEditor({
           tiktok: editing.tiktok || "",
           instagram: editing.instagram || "",
           youtube: editing.youtube || "",
+          cost: cost === null || cost === undefined ? "" : String(cost),
         }
       : emptyInfl
   );
@@ -784,8 +827,13 @@ function InflEditor({
     r.readAsDataURL(file);
   }
 
+  const maliyetSayi = f.cost.trim() === "" ? null : Number(f.cost.replace(",", "."));
+  const onizleme = karOnizleme(Math.max(0, Number(f.price) || 0), maliyetSayi !== null && Number.isFinite(maliyetSayi) ? maliyetSayi : null);
+
   async function save() {
     if (!f.name.trim()) return notify("Ad gerekli.");
+    if (isCeo && maliyetSayi !== null && !(Number.isFinite(maliyetSayi) && maliyetSayi >= 0)) return notify("Gerçek maliyet 0 veya daha büyük bir sayı olmalı.");
+    if (isCeo && maliyetSayi !== null && Math.round(maliyetSayi * 100) !== maliyetSayi * 100) return notify("Maliyet en fazla 2 ondalık basamak (kuruş) içerebilir.");
     setBusy(true);
     try {
       let photo = editing?.photo_url || "";
@@ -794,16 +842,25 @@ function InflEditor({
         name: f.name.trim(),
         username: f.username.trim(),
         followers: Math.max(0, Number(f.followers) || 0),
-        price: Math.max(0, Number(f.price) || 0),
+        price: Math.max(0, Math.round((Number(f.price) || 0) * 100) / 100),
         tiktok: f.tiktok.trim(),
         instagram: f.instagram.trim(),
         youtube: f.youtube.trim(),
         photo_url: photo,
       };
-      const { error } = editing
-        ? await sb.from("influencers").update(row).eq("id", editing.id)
-        : await sb.from("influencers").insert({ ...row, active: true, sort: Date.now() % 1000000 });
-      if (error) throw new Error(error.message);
+      const res = editing
+        ? await sb.from("influencers").update(row).eq("id", editing.id).select("id").single()
+        : await sb.from("influencers").insert({ ...row, active: true, sort: Date.now() % 1000000 }).select("id").single();
+      if (res.error) throw new Error(res.error.message);
+      // Gerçek alış maliyeti: ayrı, yalnızca CEO'nun okuyup yazabildiği tablo (müşteriye hiçbir yanıtta dönmez)
+      if (isCeo && res.data?.id) {
+        const id = (res.data as { id: string }).id;
+        const c =
+          maliyetSayi === null
+            ? await sb.from("influencer_costs").delete().eq("influencer_id", id)
+            : await sb.from("influencer_costs").upsert({ influencer_id: id, cost: maliyetSayi });
+        if (c.error) throw new Error("Influencer kaydedildi ama maliyet kaydedilemedi: " + c.error.message);
+      }
       notify(editing ? "Influencer güncellendi." : "Influencer eklendi ve sitede yayında.");
       onDone();
     } catch (e) {
@@ -827,8 +884,37 @@ function InflEditor({
         <Field label="Ad" value={f.name} onChange={(v) => set({ name: v })} placeholder="Örn: Creator 07" />
         <Field label="Kullanıcı adı" value={f.username} onChange={(v) => set({ username: v })} placeholder="@kullaniciadi" />
         <Field label="Takipçi sayısı" type="number" value={f.followers} onChange={(v) => set({ followers: v })} placeholder="125000" />
-        <Field label="Fiyat (TL)" type="number" value={f.price} onChange={(v) => set({ price: v })} placeholder="4500" />
+        <Field label="Müşteriye satış fiyatı (TL)" type="number" value={f.price} onChange={(v) => set({ price: v })} placeholder="4500" />
       </div>
+      {isCeo && (
+        <div className="mt-5 rounded-2xl border-[2.5px] border-[#111] bg-[#fffdf2] p-4">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field
+              label="Gerçek alış maliyeti (TL) · yalnızca CEO"
+              type="number"
+              value={f.cost}
+              onChange={(v) => set({ cost: v })}
+              placeholder="Boş bırakılırsa: maliyet girilmedi"
+              hint="Müşterilere hiçbir şekilde gösterilmez. Değişiklik geçmiş siparişlerin kârını etkilemez."
+            />
+            <div className="self-end text-sm">
+              {onizleme ? (
+                <>
+                  <div>
+                    Brüt kâr: <b className={onizleme.kar < 0 ? "text-[#b42318]" : ""}>{tl(onizleme.kar)}</b>
+                  </div>
+                  <div>
+                    Brüt kâr marjı: <b className={onizleme.kar < 0 ? "text-[#b42318]" : ""}>%{onizleme.marj.toLocaleString("tr-TR")}</b>
+                  </div>
+                  {onizleme.kar < 0 && <div className="mt-1 font-bold text-[#b42318]">Dikkat: maliyet satış fiyatından yüksek.</div>}
+                </>
+              ) : (
+                <span className="inline-block rounded-full border-2 border-[#111] bg-[#fff6cf] px-3 py-1 text-xs font-bold">⚠ Maliyet girilmedi — kâr hesaplanamaz</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mt-5 grid gap-5 sm:grid-cols-3">
         <Field label="TikTok bağlantısı" value={f.tiktok} onChange={(v) => set({ tiktok: v })} placeholder="https://www.tiktok.com/@..." />
         <Field label="Instagram bağlantısı" value={f.instagram} onChange={(v) => set({ instagram: v })} placeholder="https://www.instagram.com/..." />
@@ -857,19 +943,30 @@ function InflEditor({
   );
 }
 
-export function InfluencersTab({ sb, notify }: { sb: SB; notify: Notify }) {
+export function InfluencersTab({ sb, notify, isCeo = false }: { sb: SB; notify: Notify; isCeo?: boolean }) {
   const [list, setList] = useState<Infl[]>([]);
   const [editing, setEditing] = useState<Infl | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [err, setErr] = useState("");
   const [ready, setReady] = useState(false);
+  // Gerçek maliyetler yalnızca CEO için okunur (veritabanı da yalnızca CEO'ya döndürür)
+  const [costs, setCosts] = useState<Record<string, number>>({});
+  const [costErr, setCostErr] = useState("");
 
   const load = useCallback(async () => {
     const { data, error } = await sb.from("influencers").select("*").order("sort", { ascending: true }).order("created_at", { ascending: true });
     if (error) setErr("Influencerlar okunamadı.");
     setList((data as Infl[]) || []);
+    if (isCeo) {
+      const c = await sb.from("influencer_costs").select("influencer_id,cost");
+      if (c.error) setCostErr(c.error.code === "PGRST205" || c.error.code === "42P01" ? "Maliyet tablosu henüz kurulmamış (veritabanı: migration 09)." : "Maliyetler okunamadı: " + c.error.message);
+      else {
+        setCostErr("");
+        setCosts(Object.fromEntries(((c.data as { influencer_id: string; cost: number }[]) || []).map((x) => [x.influencer_id, Number(x.cost)])));
+      }
+    }
     setReady(true);
-  }, [sb]);
+  }, [sb, isCeo]);
 
   useEffect(() => {
     load();
@@ -885,7 +982,13 @@ export function InfluencersTab({ sb, notify }: { sb: SB; notify: Notify }) {
   async function remove(x: Infl) {
     if (!confirm(`“${x.name}” silinsin mi?`)) return;
     const { error } = await sb.from("influencers").delete().eq("id", x.id);
-    if (error) return notify("Silinemedi: " + error.message);
+    if (error) {
+      // Pakette kullanılan influencer silinemez (veritabanı kısıtı); önce paketten çıkarılmalı
+      if (error.code === "23503" || /influencer_package_items/.test(error.message)) {
+        return notify("Silinemedi: bu influencer bir hazır pakette kullanılıyor. Önce Influencer Paketleri bölümünde paketten çıkar veya gizle.");
+      }
+      return notify("Silinemedi: " + error.message);
+    }
     notify("Influencer silindi.");
     if (editing?.id === x.id) setEditing(null);
     load();
@@ -901,6 +1004,15 @@ export function InfluencersTab({ sb, notify }: { sb: SB; notify: Notify }) {
     <>
       <Head eyebrow="Hizmetler" title="Influencerlar" desc="Influencer sayfasında görünen kişiler. Fotoğraf ve linkleri buradan yönet." />
       {err && <SetupNote message={err} />}
+      {isCeo && costErr && <SetupNote message={costErr} />}
+      {isCeo && ready && list.length > 0 && (
+        <p className="mb-5 rounded-2xl border-[2.5px] border-[#111] bg-[#fffdf2] p-4 text-sm">
+          <b>Yalnızca CEO görür:</b> gerçek alış maliyeti ve brüt kâr.{" "}
+          {list.filter((x) => costs[x.id] === undefined).length > 0
+            ? `${list.filter((x) => costs[x.id] === undefined).length} influencer için maliyet girilmedi.`
+            : "Tüm influencerların maliyeti girildi."}
+        </p>
+      )}
 
       {!ready ? (
         <p className="text-sm font-bold tracking-[0.14em] text-[#686868]">YÜKLENİYOR…</p>
@@ -924,6 +1036,17 @@ export function InfluencersTab({ sb, notify }: { sb: SB; notify: Notify }) {
                   {x.username} · {fmt(x.followers || 0)} takipçi
                 </span>
                 <b>{tl(x.price || 0)}</b>
+                {isCeo &&
+                  (() => {
+                    const k = karOnizleme(Number(x.price) || 0, costs[x.id] ?? null);
+                    return k ? (
+                      <span className="text-[12px]">
+                        Maliyet {tl(costs[x.id])} · Kâr <b className={k.kar < 0 ? "text-[#b42318]" : ""}>{tl(k.kar)}</b> (%{k.marj.toLocaleString("tr-TR")})
+                      </span>
+                    ) : (
+                      <span className="w-fit rounded-full border-2 border-[#111] bg-[#fff6cf] px-2 py-0.5 text-[11px] font-bold">⚠ Maliyet girilmedi</span>
+                    );
+                  })()}
                 <div className="flex flex-wrap gap-1.5">
                   {([["TikTok", x.tiktok], ["Instagram", x.instagram], ["YouTube", x.youtube]] as const).map(([l, u]) =>
                     u ? (
@@ -948,8 +1071,8 @@ export function InfluencersTab({ sb, notify }: { sb: SB; notify: Notify }) {
         </div>
       )}
 
-      {editing && <InflEditor key={editing.id} sb={sb} notify={notify} editing={editing} onDone={done} />}
-      <InflEditor key={"new" + formKey} sb={sb} notify={notify} editing={null} onDone={done} />
+      {editing && <InflEditor key={editing.id} sb={sb} notify={notify} editing={editing} onDone={done} isCeo={isCeo} cost={costs[editing.id] ?? null} />}
+      <InflEditor key={"new" + formKey} sb={sb} notify={notify} editing={null} onDone={done} isCeo={isCeo} />
     </>
   );
 }
@@ -1731,6 +1854,7 @@ export const PERM_TABS: { id: string; label: string }[] = [
   { id: "traffic", label: "Trafik" },
   { id: "orders", label: "Siparişler" },
   { id: "releases", label: "Dijital Yayınlar (ISRC / UPC)" },
+  { id: "deliveries", label: "Teslimatlar" },
   { id: "support", label: "Destek Mesajları" },
   { id: "wallet", label: "Cüzdan & Bakiye" },
   { id: "payments", label: "Ödeme Yöntemleri" },

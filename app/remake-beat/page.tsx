@@ -2,10 +2,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { uploadOrderFiles } from "../../lib/siparis";
+import { istekKimligi, sendOrder, uploadOrderFiles, type UploadedFile } from "../../lib/siparis";
 import { useSiteContent } from "../../lib/use-site-content";
+import { getSupabase } from "../../lib/supabase";
 import EkHizmetKarti from "../../components/EkHizmetKarti";
-import { addMain, addonKey, currentUserId, mainKey, openCart, releaseFiles, useCart, type CartAddon, type CartMain } from "../../lib/sepet";
+import SozlesmeOnay from "../../components/SozlesmeOnay";
+import SiparisOnizleme from "../../components/SiparisOnizleme";
 import { addonFor } from "../../lib/sepet-hesap";
 
 // Fiyatlar yönetim panelindeki "Sipariş fiyatları"ndan gelir; buradaki değerler yalnızca varsayılandır.
@@ -23,11 +25,20 @@ export default function RemakeBeatPage() {
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
-  const [added, setAdded] = useState<"" | "added" | "replaced">("");
+  const [doneCode, setDoneCode] = useState("");
   const [notice, setNotice] = useState("");
   const [needLogin, setNeedLogin] = useState(false);
   const [sending, setSending] = useState(false);
+  const [addonId, setAddonId] = useState("");
+  const [onay, setOnay] = useState(false);
+  const [onizleme, setOnizleme] = useState(false);
+  const [onizHata, setOnizHata] = useState("");
+  const [eksik, setEksik] = useState<number | null>(null);
+  const [yukleme, setYukleme] = useState("");
   const audioRef = useRef<AudioContext | null>(null);
+  // Tekrar koruması ve aynı denemede dosyanın ikinci kez yüklenmemesi
+  const istekRef = useRef<{ key: string; sig: string } | null>(null);
+  const yuklenen = useRef<{ file: File; out: UploadedFile[] } | null>(null);
 
   const content = useSiteContent();
   const pricing = content.pricing.remake;
@@ -35,13 +46,10 @@ export default function RemakeBeatPage() {
   const fileName = file?.name || "";
   const activeOption = { ...options.find((item) => item.id === selected)!, price: priceOf(selected) };
 
-  // Sepet: bu hizmet sepette mi, yanında ek hizmet var mı (fiyatlar güncel içerikten)
-  const cart = useCart();
-  const inCart = cart.lines.find((l): l is CartMain => l.key === mainKey("remake")) || null;
-  const addonLine = cart.lines.find((l): l is CartAddon => l.key === addonKey("remake")) || null;
-  const addonItem = addonLine ? addonFor(content, "remake", addonLine.addonId) : null;
-  const addonTotal = addonItem && addonLine ? addonItem.price * addonLine.qty : 0;
-  const total = activeOption.price + addonTotal;
+  // Ek hizmet (sepetsiz: aynı siparişe eklenir; fiyat sunucuda yeniden hesaplanır)
+  const addonItem = addonId ? addonFor(content, "remake", addonId) : null;
+  const addonTotal = addonItem ? addonItem.price : 0;
+  const total = Math.round((activeOption.price + addonTotal) * 100) / 100;
 
   const playOption = async (item: typeof options[number]) => {
     if (playing === item.id) {
@@ -90,45 +98,73 @@ export default function RemakeBeatPage() {
     }
   };
 
-  /**
-   * Hizmeti sepete ekler (sepette varsa bu formla günceller; aynı hizmet iki kez eklenmez).
-   * Sipariş ve ödeme sepette yapılır: sözleşme onayı, bakiye kontrolü ve tek seferde bakiye düşümü.
-   */
-  const handleAdd = async () => {
+  /** Sipariş önizlemesini açar (sepet yok: doğrudan sipariş + cüzdandan ödeme). */
+  const handleOrder = async () => {
     setNotice("");
     setNeedLogin(false);
-    setAdded("");
+    setDoneCode("");
     if (!songName.trim()) return setNotice("Lütfen şarkı / referans adını yaz.");
+    if (!onay) return setNotice("Siparişi oluşturmak için sözleşme onay kutusunu işaretle.");
+    const { data } = await getSupabase().auth.getSession().catch(() => ({ data: { session: null } }));
+    if (!data.session) {
+      setNeedLogin(true);
+      return setNotice("Sipariş vermek için giriş yapmalısın.");
+    }
+    setOnizHata("");
+    setEksik(null);
+    setOnizleme(true);
+  };
+
+  /** Onay ekranında "Onayla": varsa dosyayı yükler, siparişi oluşturur ve tutarı bakiyeden düşer (tek işlem). */
+  const confirmOrder = async () => {
     setSending(true);
+    setOnizHata("");
     try {
-      const owner = await currentUserId();
-      if (file && !owner) {
-        setNeedLogin(true);
-        setNotice("Referans dosyasını eklemek için giriş yapmalısın. Dosyasız da sepete ekleyebilirsin.");
-        setSending(false);
-        return;
+      let files: UploadedFile[] = [];
+      if (file) {
+        if (yuklenen.current?.file === file) files = yuklenen.current.out;
+        else {
+          files = await uploadOrderFiles([file], {
+            kind: "reference",
+            hizmet: "remake",
+            onBytes: (l, t) => setYukleme(`Dosya yükleniyor… %${Math.floor((l / Math.max(t, 1)) * 100)}`),
+          });
+          yuklenen.current = { file, out: files };
+        }
+        setYukleme("");
       }
-      // Yeni dosya seçilmediyse sepetteki referans dosyası korunur
-      const files = file ? await uploadOrderFiles([file], { kind: "reference" }) : inCart?.order.files || [];
-      const r = addMain(
-        "remake",
-        {
-          optionId: selected,
-          songName: songName.trim(),
-          artistName: artistName.trim() || undefined,
-          details: notes.trim() ? [["Proje notu", notes.trim()]] : [],
-          files,
-        },
-        [songName.trim(), artistName.trim()].filter(Boolean).join(" · ") + (files.length ? " · referans dosyası" : ""),
-        { replace: true, owner }
-      );
-      // Değiştirilen eski referans dosyası depodan silinir
-      if (r.previous && file) releaseFiles(r.previous.order.files.filter((f) => !files.some((n) => n.url === f.url)));
-      setAdded(r.result === "replaced" ? "replaced" : "added");
-      setFile(null);
-      openCart();
+      const r = await sendOrder({
+        type: "remake",
+        accept: onay,
+        istekId: istekKimligi(istekRef, JSON.stringify([selected, songName.trim(), artistName.trim(), addonId, file?.name || "", total])),
+        optionId: selected,
+        songName: songName.trim(),
+        artistName: artistName.trim() || undefined,
+        details: notes.trim() ? [["Proje notu", notes.trim()]] : [],
+        files,
+        addonId: addonId || undefined,
+        beklenenTutar: total,
+        yonlendir: false,
+      });
+      if (r.ok) {
+        istekRef.current = null;
+        yuklenen.current = null;
+        setOnizleme(false);
+        setDoneCode(r.code || "");
+        setFile(null);
+        setOnay(false);
+      } else if (r.needTopup) {
+        setEksik(r.missing || null);
+        setOnizHata(r.error || "Yetersiz bakiye.");
+      } else if (r.fiyatDegisti) {
+        setOnizleme(false);
+        setNotice((r.error || "Fiyat değişti.") + (r.guncel?.toplam !== undefined ? ` Güncel tutar: ${Number(r.guncel.toplam).toLocaleString("tr-TR")} ₺.` : ""));
+      } else {
+        setOnizHata(r.error || "Sipariş gönderilemedi. Lütfen tekrar dene.");
+      }
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Dosya yüklenemedi. Lütfen tekrar dene.");
+      setYukleme("");
+      setOnizHata(e instanceof Error ? e.message : "Dosya yüklenemedi. Lütfen tekrar dene.");
     }
     setSending(false);
   };
@@ -173,7 +209,7 @@ export default function RemakeBeatPage() {
               <div className="hd mt-1 text-3xl font-extrabold tracking-tight">24 SAAT</div>
             </div>
           </div>
-          <EkHizmetKarti service="remake" />
+          <EkHizmetKarti service="remake" value={addonId} onChange={setAddonId} />
         </section>
 
         <div className="grid gap-8 lg:grid-cols-[1fr_430px]">
@@ -209,12 +245,12 @@ export default function RemakeBeatPage() {
               <span className="flex cursor-pointer items-center justify-between rounded-2xl border-[2.5px] border-dashed border-[#111] bg-white p-5 transition hover:bg-[#fffdf2]">
                 <span>
                   <span className="block text-base font-semibold">Ses dosyanı yükle</span>
-                  <span className="mt-1 block text-[12px] text-[#686868]">MP3, WAV veya M4A</span>
+                  <span className="mt-1 block text-[12px] text-[#686868]">MP3, WAV veya ZIP</span>
                 </span>
                 <span className="grid h-10 w-10 place-items-center rounded-full border-[2.5px] border-[#111] bg-[#f5c518] text-xl">＋</span>
                 <input
                   type="file"
-                  accept=".mp3,.wav,.m4a,audio/*"
+                  accept=".mp3,.wav,.zip,audio/mpeg,audio/wav,application/zip"
                   className="hidden"
                   onChange={(e) => {
                     setFile(e.target.files?.[0] || null);
@@ -223,11 +259,6 @@ export default function RemakeBeatPage() {
                 />
               </span>
               {fileName && <span className="mt-2 block text-sm font-medium text-[#242424]">Seçilen dosya: {fileName} (en fazla 50 MB)</span>}
-              {!fileName && inCart && inCart.order.files.length > 0 && (
-                <span className="mt-2 block text-sm font-medium text-[#242424]">
-                  Sepette yüklü referans: {inCart.order.files[0].name} (değiştirmek için yeni dosya seç)
-                </span>
-              )}
             </label>
 
             <label className="mt-5 block">
@@ -271,7 +302,7 @@ export default function RemakeBeatPage() {
                     <button
                       onClick={() => {
                         setSelected(item.id);
-                        setAdded("");
+                        setDoneCode("");
                       }}
                       className="w-full text-left"
                     >
@@ -320,12 +351,11 @@ export default function RemakeBeatPage() {
                   <span className="text-[#686868]">Proje</span>
                   <span className="max-w-[160px] truncate text-right font-semibold">{songName || "Belirtilmedi"}</span>
                 </div>
-                {addonItem && addonLine && (
+                {addonItem && (
                   <div className="flex justify-between gap-3">
                     <span className="text-[#686868]">Ek hizmet</span>
                     <span className="text-right font-semibold">
-                      + {addonItem.name}
-                      {addonLine.qty > 1 ? ` ×${addonLine.qty}` : ""} · {addonTotal.toLocaleString("tr-TR")} ₺
+                      + {addonItem.name} · {addonTotal.toLocaleString("tr-TR")} ₺
                     </span>
                   </div>
                 )}
@@ -340,19 +370,16 @@ export default function RemakeBeatPage() {
                 </span>
               </div>
 
-              {inCart && (
-                <p className="mt-4 rounded-2xl border-2 border-dashed border-[#111]/40 bg-[#f5f5f5] px-4 py-3 text-[13px] leading-5 text-[#242424]">
-                  Sepetinde bir Remake Beat var{inCart.info ? <> (<b>{inCart.info}</b>)</> : null}. Aynı hizmet iki kez eklenmez; bu formla
-                  sepettekini güncelleyebilirsin. Adet ve ek hizmet korunur.
-                </p>
-              )}
+              <div className="mt-5">
+                <SozlesmeOnay tur="siparis" checked={onay} onChange={setOnay} />
+              </div>
 
               <button
-                onClick={handleAdd}
+                onClick={handleOrder}
                 disabled={sending}
                 className="mt-5 w-full rounded-full border-[2.5px] border-[#111] bg-[#f5c518] px-5 py-4 text-sm font-bold tracking-[0.1em] shadow-[0_5px_0_#111] transition hover:-translate-y-0.5 hover:bg-[#e5b600] hover:shadow-[0_7px_0_#111] active:translate-y-[3px] active:shadow-[0_1px_0_#111] disabled:cursor-wait disabled:opacity-60"
               >
-                {sending ? "SEPETE EKLENİYOR…" : inCart ? "SEPETTEKİNİ GÜNCELLE →" : activeOption.price > 0 ? `${activeOption.price.toLocaleString("tr-TR")} ₺ · SEPETE EKLE →` : "SEPETE EKLE →"}
+                {total > 0 ? `${total.toLocaleString("tr-TR")} ₺ · SİPARİŞ VER →` : "SİPARİŞ VER →"}
               </button>
 
               {notice && (
@@ -369,14 +396,14 @@ export default function RemakeBeatPage() {
                 </div>
               )}
 
-              {added && (
+              {doneCode && (
                 <div role="status" className="mt-5 rounded-2xl border-[2.5px] border-[#111] bg-[#f5c518] p-4 text-sm leading-6 text-[#111]">
-                  <strong>{added === "replaced" ? "Sepetteki Remake Beat güncellendi ✓" : "Sepete eklendi ✓"}</strong>
+                  <strong>Siparişin alındı ✓</strong>
                   <br />
-                  Siparişi sepette sözleşme onayıyla tamamlarsın; tutar bakiyenden tek seferde düşülür.{" "}
-                  <button type="button" onClick={openCart} className="font-bold underline">
-                    Sepeti aç →
-                  </button>
+                  Sipariş numaran: <b>{doneCode}</b>. Tutar bakiyenden düşüldü.{" "}
+                  <a href="/panel" className="font-bold underline">
+                    Siparişlerim →
+                  </a>
                 </div>
               )}
 
@@ -392,6 +419,22 @@ export default function RemakeBeatPage() {
           <span className="text-[#f5c518]">CREATE YOUR SOUND.</span>
         </footer>
       </div>
+
+      <SiparisOnizleme
+        acik={onizleme}
+        baslik={`Remake Beat · ${activeOption.name}`}
+        kalemler={[
+          { ad: `Remake Beat · ${activeOption.name}`, not: [songName.trim(), artistName.trim()].filter(Boolean).join(" · ") + (fileName ? ` · ${fileName}` : ""), tutar: activeOption.price },
+          ...(addonItem ? [{ ad: `Ek hizmet · ${addonItem.name}`, tutar: addonItem.price }] : []),
+        ]}
+        araToplam={total}
+        toplam={total}
+        gonderiliyor={sending}
+        hata={yukleme || onizHata}
+        eksik={eksik}
+        onOnayla={confirmOrder}
+        onKapat={() => setOnizleme(false)}
+      />
     </main>
   );
 }

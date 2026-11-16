@@ -1,10 +1,9 @@
 /**
  * lib/sepet-hesap.ts
- * Sepet fiyat kuralları: ana hizmetin ve ek hizmetin birim fiyatı, adet sınırları, öneri kartı.
- * Hem sepet ekranı (gösterim) hem /api/sepet (asıl hesap) BU dosyayı kullanır; böylece müşterinin gördüğü
- * toplam ile sunucunun bakiyeden düştüğü toplam aynı kurallardan çıkar. Sunucu fiyatları her siparişte
- * Supabase'teki güncel içerikten yeniden hesaplar; tarayıcıdan gelen hiçbir fiyat kullanılmaz.
- * React'e bağlı değildir.
+ * Remake Beat / Mix & Mastering fiyat kuralları ve ek hizmet (upsell) önerileri.
+ * Sepet kaldırıldı (6. aşama): ek hizmet doğrudan siparişe eklenir. Hizmet sayfası (gösterim) ve /api/siparis
+ * (asıl hesap) aynı kayıtları kullanır; sunucu fiyatları her siparişte Supabase'teki güncel içerikten yeniden
+ * hesaplar, tarayıcıdan gelen hiçbir fiyat kullanılmaz. React'e bağlı değildir.
  */
 import type { AddonItem, CartService, SiteContent } from "./site-content";
 

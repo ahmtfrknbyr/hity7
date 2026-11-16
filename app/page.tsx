@@ -11,6 +11,9 @@
  */
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSiteContent } from "../lib/use-site-content";
+import { useRol } from "../lib/use-rol";
+import { hizmetGorunur } from "../lib/erisim";
 
 const ROUTES = {
   smm: "/smm-panel",
@@ -205,27 +208,27 @@ const HTML = `
     </div>
 
     <div class="pp left hero on" data-i="0" data-say="Selam! Kaydır, plağa zoom yapalım.|Her plakta bir hizmet var.|Hazır mısın? Aşağı!">
-      <div class="kicker">MÜZİK TEKNOLOJİ PLATFORMU</div>
-      <h1>MÜZİĞİN GELECEĞİNİ <span class="mark">ŞEKİLLENDİR.</span></h1>
-      <p class="lead">Sanatını büyüt. Müziğini dünyaya duyur. Dijital gücünü HITY7 ile keşfet.</p>
-      <div class="cta"><a class="btn" href="#h7-plak-1" data-scroll="1">Hizmetleri Keşfet</a><a class="btn btn-yellow" href="${ROUTES.register}">Hemen Başla</a></div>
+      <div class="kicker" data-k="kicker">MÜZİK TEKNOLOJİ PLATFORMU</div>
+      <h1 data-k="heroTitle" data-k-mark="1">MÜZİĞİN GELECEĞİNİ <span class="mark">ŞEKİLLENDİR.</span></h1>
+      <p class="lead" data-k="heroSub">Sanatını büyüt. Müziğini dünyaya duyur. Dijital gücünü HITY7 ile keşfet.</p>
+      <div class="cta"><a class="btn" href="#h7-plak-1" data-scroll="1" data-k="ctaPrimary">Hizmetleri Keşfet</a><a class="btn btn-yellow" href="${ROUTES.register}" data-k="ctaSecondary">Hemen Başla</a></div>
     </div>
 
-    <div class="pp right" data-i="1" style="--mt:-190px" data-say="Hesaplarını tek noktadan yönet!|Kampanyalarını buradan takip et.|Profesyonel araçlar hazır!">
-      <div class="card"><span class="tag">PLAK 1 / 4 · SMM PANEL</span><h3>Dijital Gücünü Artır</h3><p>Sosyal medya hesaplarını profesyonel araçlarla yönet, kampanyalarını tek noktadan takip et.</p><ul class="feats"><li>Tek noktadan yönetim</li><li>Kampanya takibi</li><li>Profesyonel araçlar</li></ul><a class="btn go" href="${ROUTES.smm}">SMM Paneli Keşfet <span class="arr" aria-hidden="true">→</span></a></div>
+    <div class="pp right" data-i="1" data-hizmet="smm" style="--mt:-190px" data-say="Hesaplarını tek noktadan yönet!|Kampanyalarını buradan takip et.|Profesyonel araçlar hazır!">
+      <div class="card"><span class="tag" data-k="cards.smm.tag">PLAK 1 / 4 · SMM PANEL</span><h3 data-k="cards.smm.title">Dijital Gücünü Artır</h3><p data-k="cards.smm.desc">Sosyal medya hesaplarını profesyonel araçlarla yönet, kampanyalarını tek noktadan takip et.</p><ul class="feats"><li data-k="cards.smm.feats.0">Tek noktadan yönetim</li><li data-k="cards.smm.feats.1">Kampanya takibi</li><li data-k="cards.smm.feats.2">Profesyonel araçlar</li></ul><a class="btn go" href="${ROUTES.smm}"><span data-k="cards.smm.button">SMM Paneli Keşfet</span> <span class="arr" aria-hidden="true">→</span></a></div>
     </div>
-    <div class="pp left" data-i="2" data-say="Doğru içerik üreticileriyle tanış!|Etkili kampanyalar kur.|Görünürlüğün büyüsün!">
-      <div class="card"><span class="tag">PLAK 2 / 4 · INFLUENCER MARKETING</span><h3>Doğru Kitleye Ulaş</h3><p>Markanı ve müziğini doğru içerik üreticileriyle buluştur. Etkili kampanyalar oluştur.</p><ul class="feats"><li>Doğru içerik üreticileri</li><li>Etkili kampanyalar</li><li>Dijital görünürlük</li></ul><a class="btn go" href="${ROUTES.influencer}">Kampanya Oluştur <span class="arr" aria-hidden="true">→</span></a></div>
+    <div class="pp left" data-i="2" data-hizmet="influencer" data-say="Doğru içerik üreticileriyle tanış!|Etkili kampanyalar kur.|Görünürlüğün büyüsün!">
+      <div class="card"><span class="tag" data-k="cards.influencer.tag">PLAK 2 / 4 · INFLUENCER MARKETING</span><h3 data-k="cards.influencer.title">Doğru Kitleye Ulaş</h3><p data-k="cards.influencer.desc">Markanı ve müziğini doğru içerik üreticileriyle buluştur. Etkili kampanyalar oluştur.</p><ul class="feats"><li data-k="cards.influencer.feats.0">Doğru içerik üreticileri</li><li data-k="cards.influencer.feats.1">Etkili kampanyalar</li><li data-k="cards.influencer.feats.2">Dijital görünürlük</li></ul><a class="btn go" href="${ROUTES.influencer}"><span data-k="cards.influencer.button">Kampanya Oluştur</span> <span class="arr" aria-hidden="true">→</span></a></div>
     </div>
-    <div class="pp right" data-i="3" data-say="Referans sound'unu yeniden tasarla!|Sana özel altyapılar var.|Profesyonel prodüksiyon!">
-      <div class="card"><span class="tag">PLAK 3 / 4 · REMAKE BEAT</span><h3>Sesini Yeniden Yarat</h3><p>Referans sound'unuzu yeniden tasarlayın. Müziğinize özel altyapılar ve profesyonel prodüksiyon.</p><ul class="feats"><li>Referans sound'u yeniden tasarım</li><li>Özel altyapılar</li><li>Profesyonel prodüksiyon</li></ul><a class="btn go" href="${ROUTES.remake}">Remake Beat'i Keşfet <span class="arr" aria-hidden="true">→</span></a></div>
+    <div class="pp right" data-i="3" data-hizmet="remake" data-say="Referans sound'unu yeniden tasarla!|Sana özel altyapılar var.|Profesyonel prodüksiyon!">
+      <div class="card"><span class="tag" data-k="cards.remake.tag">PLAK 3 / 4 · REMAKE BEAT</span><h3 data-k="cards.remake.title">Sesini Yeniden Yarat</h3><p data-k="cards.remake.desc">Referans sound'unuzu yeniden tasarlayın. Müziğinize özel altyapılar ve profesyonel prodüksiyon.</p><ul class="feats"><li data-k="cards.remake.feats.0">Referans sound'u yeniden tasarım</li><li data-k="cards.remake.feats.1">Özel altyapılar</li><li data-k="cards.remake.feats.2">Profesyonel prodüksiyon</li></ul><a class="btn go" href="${ROUTES.remake}"><span data-k="cards.remake.button">Remake Beat'i Keşfet</span> <span class="arr" aria-hidden="true">→</span></a></div>
     </div>
-    <div class="pp left" data-i="4" data-say="Müziğin tüm platformlarda!|Dağıtım süreci tek merkezde.|Yayına hazır mısın?">
-      <div class="card"><span class="tag">PLAK 4 / 4 · DİJİTAL YAYIN</span><h3>Dijital Yayın</h3><p>Müziğinizi dijital platformlarda yayınlayın. Yayın ve dağıtım sürecinizi tek merkezden yönetin.</p><ul class="feats"><li>Dijital platformlarda yayın</li><li>Dağıtım süreci</li><li>Tek merkezden yönetim</li></ul><a class="btn go" href="${ROUTES.yayin}">Dijital Yayını Keşfet <span class="arr" aria-hidden="true">→</span></a></div>
+    <div class="pp left" data-i="4" data-hizmet="yayin" data-say="Müziğin tüm platformlarda!|Dağıtım süreci tek merkezde.|Yayına hazır mısın?">
+      <div class="card"><span class="tag" data-k="cards.yayin.tag">PLAK 4 / 4 · DİJİTAL YAYIN</span><h3 data-k="cards.yayin.title">Dijital Yayın</h3><p data-k="cards.yayin.desc">Müziğinizi dijital platformlarda yayınlayın. Yayın ve dağıtım sürecinizi tek merkezden yönetin.</p><ul class="feats"><li data-k="cards.yayin.feats.0">Dijital platformlarda yayın</li><li data-k="cards.yayin.feats.1">Dağıtım süreci</li><li data-k="cards.yayin.feats.2">Tek merkezden yönetim</li></ul><a class="btn go" href="${ROUTES.yayin}"><span data-k="cards.yayin.button">Dijital Yayını Keşfet</span> <span class="arr" aria-hidden="true">→</span></a></div>
     </div>
     <div class="pp top" data-i="5">
-      <h2>Müziğin Geleceğini Şekillendir.</h2>
-      <div style="margin-top:22px"><a class="btn btn-dark" href="${ROUTES.register}" style="min-height:54px;padding:0 32px;font-size:17px">Hemen Başla</a></div>
+      <h2 data-k="finalTitle">Müziğin Geleceğini Şekillendir.</h2>
+      <div style="margin-top:22px"><a class="btn btn-dark" href="${ROUTES.register}" style="min-height:54px;padding:0 32px;font-size:17px" data-k="finalButton">Hemen Başla</a></div>
     </div>
 
     <div class="prog" id="prog" aria-hidden="true"><b class="on"></b><b></b><b></b><b></b><b></b><b></b></div>
@@ -332,8 +335,8 @@ const HTML = `
 <footer class="ftr">
   <div class="wrap ftr-in">
     <a class="logo" href="/" aria-label="HITY7 ana sayfa">HITY7<i></i></a>
-    <nav aria-label="Alt menü"><a href="${ROUTES.smm}">SMM Panel</a><a href="${ROUTES.influencer}">Influencer Marketing</a><a href="${ROUTES.remake}">Remake Beat</a><a href="${ROUTES.yayin}">Dijital Yayın</a></nav>
-    <small>HITY7 © 2026 · Müziğin Geleceğini Şekillendir.</small>
+    <nav aria-label="Alt menü"><a href="${ROUTES.smm}" data-hizmet="smm">SMM Panel</a><a href="${ROUTES.influencer}" data-hizmet="influencer">Influencer Marketing</a><a href="${ROUTES.remake}" data-hizmet="remake">Remake Beat</a><a href="${ROUTES.yayin}" data-hizmet="yayin">Dijital Yayın</a></nav>
+    <small data-k="footerText">HITY7 © 2026 · Müziğin Geleceğini Şekillendir.</small>
   </div>
 </footer>
 `;
@@ -607,6 +610,43 @@ export default function HomePage() {
       if (typeof stop === "function") stop();
     };
   }, [router]);
+
+  /*
+   * CEO panelinden düzenlenen ana sayfa yazıları (site_content → home) ve rolüne kapalı hizmetlerin gizlenmesi.
+   * HTML yapısı (ve ona bağlı animasyonlar) değişmez; yalnızca işaretli öğelerin yazısı güncellenir.
+   */
+  const content = useSiteContent();
+  const rol = useRol();
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const h = content.home;
+    const deger = (yol) => yol.split(".").reduce((o, k) => (o == null ? o : o[k]), h);
+    root.querySelectorAll("[data-k]").forEach((el) => {
+      const v = deger(el.getAttribute("data-k"));
+      if (typeof v !== "string") return;
+      if (el.getAttribute("data-k-mark")) {
+        // Büyük başlık: son kelime sarı vurguyla, tasarımdaki gibi büyük harfle
+        const t = v.trim().toLocaleUpperCase("tr-TR");
+        const i = t.lastIndexOf(" ");
+        el.textContent = "";
+        if (i > 0) el.appendChild(document.createTextNode(t.slice(0, i) + " "));
+        const mark = document.createElement("span");
+        mark.className = "mark";
+        mark.textContent = i > 0 ? t.slice(i + 1) : t;
+        el.appendChild(mark);
+      } else {
+        el.textContent = v;
+      }
+    });
+    if (rol === "load") return;
+    const r = rol === "visitor" || rol === "banned" ? null : rol;
+    root.querySelectorAll("[data-hizmet]").forEach((el) => {
+      const gor = hizmetGorunur(content.erisim, el.getAttribute("data-hizmet"), r);
+      if (el.classList.contains("pp")) el.style.visibility = gor ? "" : "hidden";
+      else el.style.display = gor ? "" : "none";
+    });
+  }, [content, rol]);
 
   return (
     <>

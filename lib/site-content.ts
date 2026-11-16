@@ -6,6 +6,7 @@
  * Bu dosya React'e bağlı değildir; API route'larında da güvenle kullanılabilir.
  */
 import { isLegalSlug, type LegalSlug } from "./yasal-belgeler";
+import { mergeErisim, type ErisimAyar } from "./erisim";
 
 export type GeneralContent = {
   siteName: string;
@@ -20,11 +21,50 @@ export type GeneralContent = {
   whatsapp: string;
 };
 
+/** Ana sayfadaki hizmet kartı (plak) */
+export type HomeCard = { tag: string; title: string; desc: string; feats: [string, string, string]; button: string };
+export type HomeCardId = "smm" | "influencer" | "remake" | "yayin";
+
 export type HomeContent = {
+  kicker: string;
+  /** Büyük başlık. Son kelime sarı vurguyla gösterilir. */
   heroTitle: string;
   heroSub: string;
   ctaPrimary: string;
   ctaSecondary: string;
+  cards: Record<HomeCardId, HomeCard>;
+  finalTitle: string;
+  finalButton: string;
+  footerText: string;
+};
+
+/** Menü başlıkları (adresler değişmez; yalnızca görünen yazı) */
+export type NavContent = {
+  home: string;
+  smm: string;
+  influencer: string;
+  remake: string;
+  mix: string;
+  yayin: string;
+  destek: string;
+  account: string;
+};
+
+/** Site altı yazıları ve bağlantı başlıkları */
+export type FooterContent = {
+  copyright: string;
+  destek: string;
+  legal: Partial<Record<LegalSlug, string>>;
+};
+
+/** Sekme başlığı, açıklama, simge ve sosyal medya paylaşım bilgileri */
+export type SeoContent = {
+  title: string;
+  description: string;
+  favicon: string;
+  ogTitle: string;
+  ogDescription: string;
+  ogImage: string;
 };
 
 export type ServiceItem = {
@@ -104,6 +144,11 @@ export type SiteContent = {
   upsell: UpsellContent;
   company: CompanyInfo;
   legal: LegalContent;
+  nav: NavContent;
+  footer: FooterContent;
+  seo: SeoContent;
+  /** Hizmet görünürlüğü / sipariş izni (yalnızca CEO değiştirir) */
+  erisim: ErisimAyar;
 };
 
 export const DEFAULT_CONTENT: SiteContent = {
@@ -119,13 +164,67 @@ export const DEFAULT_CONTENT: SiteContent = {
     youtube: "",
     whatsapp: "",
   },
+  // Varsayılanlar ana sayfadaki mevcut yazılarla birebir aynıdır (CEO kaydedene kadar sitede hiçbir şey değişmez)
   home: {
+    kicker: "MÜZİK TEKNOLOJİ PLATFORMU",
     heroTitle: "Müziğin Geleceğini Şekillendir.",
-    heroSub:
-      "Influencer, sosyal medya, remake beat, dijital yayın ve mix hizmetleri tek platformda.",
+    heroSub: "Sanatını büyüt. Müziğini dünyaya duyur. Dijital gücünü HITY7 ile keşfet.",
     ctaPrimary: "Hizmetleri Keşfet",
-    ctaSecondary: "Üye Ol",
+    ctaSecondary: "Hemen Başla",
+    cards: {
+      smm: {
+        tag: "PLAK 1 / 4 · SMM PANEL",
+        title: "Dijital Gücünü Artır",
+        desc: "Sosyal medya hesaplarını profesyonel araçlarla yönet, kampanyalarını tek noktadan takip et.",
+        feats: ["Tek noktadan yönetim", "Kampanya takibi", "Profesyonel araçlar"],
+        button: "SMM Paneli Keşfet",
+      },
+      influencer: {
+        tag: "PLAK 2 / 4 · INFLUENCER MARKETING",
+        title: "Doğru Kitleye Ulaş",
+        desc: "Markanı ve müziğini doğru içerik üreticileriyle buluştur. Etkili kampanyalar oluştur.",
+        feats: ["Doğru içerik üreticileri", "Etkili kampanyalar", "Dijital görünürlük"],
+        button: "Kampanya Oluştur",
+      },
+      remake: {
+        tag: "PLAK 3 / 4 · REMAKE BEAT",
+        title: "Sesini Yeniden Yarat",
+        desc: "Referans sound'unuzu yeniden tasarlayın. Müziğinize özel altyapılar ve profesyonel prodüksiyon.",
+        feats: ["Referans sound'u yeniden tasarım", "Özel altyapılar", "Profesyonel prodüksiyon"],
+        button: "Remake Beat'i Keşfet",
+      },
+      yayin: {
+        tag: "PLAK 4 / 4 · DİJİTAL YAYIN",
+        title: "Dijital Yayın",
+        desc: "Müziğinizi dijital platformlarda yayınlayın. Yayın ve dağıtım sürecinizi tek merkezden yönetin.",
+        feats: ["Dijital platformlarda yayın", "Dağıtım süreci", "Tek merkezden yönetim"],
+        button: "Dijital Yayını Keşfet",
+      },
+    },
+    finalTitle: "Müziğin Geleceğini Şekillendir.",
+    finalButton: "Hemen Başla",
+    footerText: "HITY7 © 2026 · Müziğin Geleceğini Şekillendir.",
   },
+  nav: {
+    home: "ANA SAYFA",
+    smm: "SMM PANEL",
+    influencer: "INFLUENCER",
+    remake: "REMAKE BEAT",
+    mix: "MIX & MASTERING",
+    yayin: "DİJİTAL YAYIN",
+    destek: "DESTEK",
+    account: "HESABIM",
+  },
+  footer: { copyright: "", destek: "Destek", legal: {} },
+  seo: {
+    title: "HITY7 — Müziğin Geleceğini Şekillendir",
+    description: "Influencer marketing, SMM panel, remake beat, mix & mastering ve dijital yayın hizmetleri tek platformda.",
+    favicon: "",
+    ogTitle: "",
+    ogDescription: "",
+    ogImage: "",
+  },
+  erisim: mergeErisim(null),
   services: [
     { id: "influencer", name: "Influencer Marketing", desc: "Şarkını doğru kitlelere ulaştır.", price: "Fiyat eklenecek", href: "/influencer-marketing", active: true },
     { id: "smm", name: "SMM Panel", desc: "Sosyal medya büyütme hizmetleri.", price: "Fiyat eklenecek", href: "/smm-panel", active: true },
@@ -245,14 +344,86 @@ export function mergeUpsell(v: unknown): UpsellContent {
   return { addons, offers };
 }
 
+const txt = (v: unknown, fallback: string, max = 400) => (typeof v === "string" ? v.slice(0, max) : fallback);
+
+/** Ana sayfa içeriği: eski kayıtlar (yalnızca 4 alan) ve yeni alanlar varsayılanlarla birleştirilir. */
+export function mergeHome(v: unknown): HomeContent {
+  const d = DEFAULT_CONTENT.home;
+  const s = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const cardsSrc = (s.cards && typeof s.cards === "object" ? s.cards : {}) as Record<string, Record<string, unknown> | undefined>;
+  const cards = {} as Record<HomeCardId, HomeCard>;
+  for (const id of Object.keys(d.cards) as HomeCardId[]) {
+    const c = cardsSrc[id] || {};
+    const f = Array.isArray(c.feats) ? c.feats : [];
+    cards[id] = {
+      tag: txt(c.tag, d.cards[id].tag, 80),
+      title: txt(c.title, d.cards[id].title, 120),
+      desc: txt(c.desc, d.cards[id].desc, 400),
+      feats: [0, 1, 2].map((i) => txt(f[i], d.cards[id].feats[i], 80)) as [string, string, string],
+      button: txt(c.button, d.cards[id].button, 60),
+    };
+  }
+  return {
+    kicker: txt(s.kicker, d.kicker, 80),
+    heroTitle: txt(s.heroTitle, d.heroTitle, 160),
+    heroSub: txt(s.heroSub, d.heroSub, 400),
+    ctaPrimary: txt(s.ctaPrimary, d.ctaPrimary, 60),
+    ctaSecondary: txt(s.ctaSecondary, d.ctaSecondary, 60),
+    cards,
+    finalTitle: txt(s.finalTitle, d.finalTitle, 160),
+    finalButton: txt(s.finalButton, d.finalButton, 60),
+    footerText: txt(s.footerText, d.footerText, 200),
+  };
+}
+
+export function mergeNav(v: unknown): NavContent {
+  const d = DEFAULT_CONTENT.nav;
+  const s = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const out = { ...d };
+  for (const k of Object.keys(d) as (keyof NavContent)[]) out[k] = txt(s[k], d[k], 40).trim() || d[k];
+  return out;
+}
+
+export function mergeFooter(v: unknown): FooterContent {
+  const s = (v && typeof v === "object" ? v : {}) as { copyright?: unknown; destek?: unknown; legal?: Record<string, unknown> };
+  const legal: FooterContent["legal"] = {};
+  for (const [k, val] of Object.entries(s.legal && typeof s.legal === "object" ? s.legal : {})) {
+    if (isLegalSlug(k) && typeof val === "string" && val.trim()) legal[k] = val.slice(0, 60);
+  }
+  return { copyright: txt(s.copyright, "", 200), destek: txt(s.destek, "Destek", 40).trim() || "Destek", legal };
+}
+
+const httpsVeyaBos = (v: unknown) => (typeof v === "string" && (/^https:\/\//.test(v) || v.startsWith("/")) ? v.slice(0, 500) : "");
+
+export function mergeSeo(v: unknown): SeoContent {
+  const d = DEFAULT_CONTENT.seo;
+  const s = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  return {
+    title: txt(s.title, d.title, 120).trim() || d.title,
+    description: txt(s.description, d.description, 300).trim() || d.description,
+    favicon: httpsVeyaBos(s.favicon),
+    ogTitle: txt(s.ogTitle, "", 120),
+    ogDescription: txt(s.ogDescription, "", 300),
+    ogImage: httpsVeyaBos(s.ogImage),
+  };
+}
+
 /** Veritabanından gelen satırları varsayılanlarla birleştirir. */
 export function mergeContent(rows: { key: string; value: unknown }[] | null): SiteContent {
   const out: SiteContent = JSON.parse(JSON.stringify(DEFAULT_CONTENT));
   for (const row of rows || []) {
     if (row.key === "general" && row.value && typeof row.value === "object") {
       out.general = { ...out.general, ...(row.value as Partial<GeneralContent>) };
-    } else if (row.key === "home" && row.value && typeof row.value === "object") {
-      out.home = { ...out.home, ...(row.value as Partial<HomeContent>) };
+    } else if (row.key === "home") {
+      out.home = mergeHome(row.value);
+    } else if (row.key === "nav") {
+      out.nav = mergeNav(row.value);
+    } else if (row.key === "footer") {
+      out.footer = mergeFooter(row.value);
+    } else if (row.key === "seo") {
+      out.seo = mergeSeo(row.value);
+    } else if (row.key === "erisim") {
+      out.erisim = mergeErisim(row.value);
     } else if (row.key === "services" && Array.isArray(row.value)) {
       out.services = row.value as ServiceItem[];
     } else if (row.key === "producers" && Array.isArray(row.value)) {

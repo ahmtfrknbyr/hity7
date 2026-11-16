@@ -42,6 +42,25 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
     },
   },
   {
+    name: "update_access",
+    description:
+      "Bir hizmetin kimlere görüneceğini ve kimlerin sipariş verebileceğini değiştirme önerisi. Hizmeti tamamen kapatmak için field=active kullan; group gerekmez.",
+    input_schema: {
+      type: "object",
+      properties: {
+        service: { type: "string", enum: ["influencer", "smm", "remake", "mix", "yayin"] },
+        field: { type: "string", enum: ["active", "visible", "orderable"] },
+        group: {
+          type: "string",
+          enum: ["visitor", "member", "mod", "ceo"],
+          description: "visible için visitor/member/mod/ceo, orderable için member/mod/ceo. active için boş bırak.",
+        },
+        value: { type: "boolean" },
+      },
+      required: ["service", "field", "value"],
+    },
+  },
+  {
     name: "update_producer",
     description: "Bir prodüktörün bilgisini veya mix/stems fiyatını değiştirme önerisi.",
     input_schema: {
@@ -67,7 +86,7 @@ Yapabileceklerin:
 - Fiyat önerileri ve kampanya planlama (bağlamdaki gerçek verilere dayanarak).
 - Sipariş istatistiklerini yorumlamak.
 - Site yazıları, slogan, duyuru, hizmet açıklamaları ve fiyat metinleri için öneri yazmak.
-- Değişiklik gerekiyorsa update_content / update_service / update_producer araçlarıyla ÖNERİ oluşturmak. Araç çağırmak değişikliği uygulamaz; CEO "Uygula" demeden hiçbir şey değişmez. Bunu asla "değiştirdim" diye anlatma, "öneri hazırladım" de.
+- Değişiklik gerekiyorsa update_content / update_service / update_producer / update_access (hizmet görünürlüğü ve sipariş izni) araçlarıyla ÖNERİ oluşturmak. Araç çağırmak değişikliği uygulamaz; CEO "Uygula" demeden hiçbir şey değişmez. Bunu asla "değiştirdim" diye anlatma, "öneri hazırladım" de.
 - Her araç çağrısından önce kısa bir açıklama yaz.
 
 Kurallar:

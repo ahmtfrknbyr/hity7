@@ -29,6 +29,18 @@ import {
   type PermMap,
 } from "./extra";
 import { AuditTab, CeoDashboard, ReleasesTab, rpcCall } from "./ceo-extra";
+import {
+  DepolamaDurumu,
+  ErisimMatrisi,
+  FinansTab,
+  PaketlerTab,
+  SiteMetinleri,
+  SiteYayinda,
+  TeslimatlarTab,
+  UyeYetkileri,
+} from "./ceo-ek";
+import { ONIZLEME_ANAHTARI } from "../../lib/use-site-content";
+import { ERISIM_GRUPLARI, HIZMETLER, type ErisimGrubu, type HizmetId } from "../../lib/erisim";
 import { LEGAL_DOCS, type LegalSlug } from "../../lib/yasal-belgeler";
 import { LEGAL_TEMPLATES } from "../../lib/yasal-metinler";
 
@@ -42,8 +54,11 @@ type TabId =
   | "overview"
   | "traffic"
   | "orders"
+  | "deliveries"
   | "releases"
   | "audit"
+  | "packages"
+  | "finance"
   | "support"
   | "wallet"
   | "payments"
@@ -58,8 +73,11 @@ type TabId =
 
 type RoleId = "ceo" | "admin" | "mod" | "amele" | "member";
 const ROLE_LABEL: Record<RoleId, string> = { ceo: "CEO (patron)", admin: "Admin", mod: "Moderatör", amele: "Personel", member: "Kullanıcı" };
-/** Bu bölümleri yalnızca CEO görür (CEO Merkezi). İşlem kayıtları CEO ve admin'e açıktır. */
-const CEO_ONLY: string[] = ["ceo"];
+/**
+ * Bu bölümleri yalnızca CEO görür (CEO Merkezi, finans / brüt kâr, influencer paketleri). İşlem kayıtları CEO ve admin'e açıktır.
+ * Arayüzdeki bu liste tek koruma değildir: ilgili tablolar ve fonksiyonlar veritabanında da yalnızca CEO'ya açıktır.
+ */
+const CEO_ONLY: string[] = ["ceo", "finance", "packages"];
 const ADMIN_ONLY: string[] = ["audit"];
 const USER_DOMAIN = "panel.hity7.net";
 /** Kullanıcı adını (ahmtfrknbyr) Supabase'in istediği e-posta biçimine çevirir. */
@@ -114,11 +132,14 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "overview", label: "Genel Bakış", icon: "⌂" },
   { id: "traffic", label: "Trafik", icon: "↗" },
   { id: "orders", label: "Siparişler", icon: "▤" },
+  { id: "deliveries", label: "Teslimatlar", icon: "⇩" },
   { id: "releases", label: "Dijital Yayınlar", icon: "◎" },
   { id: "support", label: "Destek Mesajları", icon: "✉" },
   { id: "wallet", label: "Cüzdan & Bakiye", icon: "₺" },
+  { id: "finance", label: "Finans · Brüt Kâr", icon: "◷" },
   { id: "payments", label: "Ödeme Yöntemleri", icon: "▣" },
   { id: "influencers", label: "Influencerlar", icon: "★" },
+  { id: "packages", label: "Influencer Paketleri", icon: "▦" },
   { id: "smm", label: "SMM Sağlayıcıları", icon: "⇄" },
   { id: "services", label: "Hizmetler & Fiyatlar", icon: "◈" },
   { id: "producers", label: "Prodüktörler", icon: "◉" },
@@ -256,6 +277,11 @@ function describeProposal(p: Proposal, content: SiteContent): string {
     const s = content.producers.find((x) => x.id === i.id);
     return `Prodüktör “${s?.name || i.id}” · ${i.field} → ${val}`;
   }
+  if (p.name === "update_access") {
+    const h = HIZMETLER.find((x) => x.id === i.service);
+    const nere = i.field === "active" ? "aktif" : `${i.field === "visible" ? "görünürlük" : "sipariş izni"} (${i.group})`;
+    return `Hizmet erişimi “${h?.ad || i.service}” · ${nere} → ${i.value === true ? "açık" : "kapalı"}`;
+  }
   return p.name;
 }
 
@@ -288,6 +314,21 @@ function applyProposal(content: SiteContent, p: Proposal): { next: SiteContent; 
     if (field === "active" ? typeof i.value !== "boolean" : typeof i.value !== "string") return null;
     (item as Record<string, unknown>)[field] = i.value;
     return { next, keys: ["services"] };
+  }
+
+  if (p.name === "update_access") {
+    const s = HIZMETLER.some((h) => h.id === i.service) ? next.erisim.services[i.service as HizmetId] : null;
+    if (!s || typeof i.value !== "boolean") return null;
+    if (i.field === "active") {
+      s.active = i.value;
+    } else if (i.field === "visible" && (ERISIM_GRUPLARI as string[]).includes(String(i.group))) {
+      s.visible[i.group as ErisimGrubu] = i.value;
+    } else if (i.field === "orderable" && ["member", "mod", "ceo"].includes(String(i.group))) {
+      s.orderable[i.group as "member" | "mod" | "ceo"] = i.value;
+    } else {
+      return null;
+    }
+    return { next, keys: ["erisim"] };
   }
 
   if (p.name === "update_producer") {
@@ -1117,8 +1158,12 @@ function Panel({
   const [orderSearch, setOrderSearch] = useState("");
   const [ceoStats, setCeoStats] = useState<Record<string, unknown> | null>(null);
   const [legalDoc, setLegalDoc] = useState<LegalSlug>("kvkk");
+  /** Moderatör / personel için CEO'nun tanımladığı kişiye özel bölüm listesi (yoksa rol varsayılanı geçerli) */
+  const [ozelYetki, setOzelYetki] = useState<string[] | null>(null);
+  /** Üyeler bölümünde yetki düzenleyicisi açık olan üye */
+  const [yetkiUye, setYetkiUye] = useState<string | null>(null);
   const isCeo = profile.role === "ceo";
-  /** CEO veya admin: tüm yönetim bölümleri (CEO Merkezi yalnızca CEO'da) */
+  /** CEO veya admin: tüm yönetim bölümleri (CEO Merkezi, finans ve paketler yalnızca CEO'da) */
   const isAdmin = isCeo || profile.role === "admin";
   const effRole: RoleId = isAdmin && viewAs ? viewAs : profile.role;
   const allowed: string[] =
@@ -1128,7 +1173,7 @@ function Panel({
         ? TABS.map((t) => t.id).filter((id) => !CEO_ONLY.includes(id))
         : effRole === "member"
           ? []
-          : (perms[effRole] || []).filter((id) => !CEO_ONLY.includes(id) && !ADMIN_ONLY.includes(id));
+          : (effRole === profile.role && ozelYetki ? ozelYetki : perms[effRole] || []).filter((id) => !CEO_ONLY.includes(id) && !ADMIN_ONLY.includes(id));
   const can = (id: TabId) => allowed.includes(id);
   const visibleTabs = TABS.filter((t) => can(t.id));
   const navTabs = visibleTabs;
@@ -1167,6 +1212,13 @@ function Panel({
       for (const r of pr.data as { role: "mod" | "amele"; tab: string }[]) myPerms[r.role]?.push(r.tab);
     }
     setPerms(myPerms);
+    // Kişiye özel yetki (varsa yalnızca bu liste geçerlidir; API ve veritabanı da aynı listeyi uygular)
+    let myOwn: string[] | null = null;
+    if (profile.role === "mod" || profile.role === "amele") {
+      const u = await sb.from("user_permission_sets").select("tabs").eq("user_id", profile.id).maybeSingle();
+      if (!u.error && u.data) myOwn = (u.data as { tabs: string[] }).tabs || [];
+    }
+    setOzelYetki(myOwn);
     const [c, o, m] = await Promise.all([
       sb.from("site_content").select("key,value"),
       sb.from("orders").select("id,customer_name,service,title,amount,status,created_at").order("created_at", { ascending: false }).limit(300),
@@ -1185,16 +1237,27 @@ function Panel({
     setDraft(merged);
     setOrders((o.data as Order[]) || []);
     setMembers((m.data as Profile[]) || []);
-    const myTabs = profile.role === "admin" || profile.role === "ceo" ? ["traffic", "overview"] : myPerms[profile.role as "mod" | "amele"] || [];
+    const myTabs = profile.role === "admin" || profile.role === "ceo" ? ["traffic", "overview"] : myOwn || myPerms[profile.role as "mod" | "amele"] || [];
     if (myTabs.includes("traffic") || myTabs.includes("overview")) await loadViews();
     setLoaded(true);
-  }, [sb, loadViews, profile.role]);
+  }, [sb, loadViews, profile.role, profile.id]);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(content);
+
+  // Kaydedilmemiş değişiklik varken sayfadan çıkılırsa tarayıcı uyarır
+  useEffect(() => {
+    if (!dirty) return;
+    const uyar = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", uyar);
+    return () => window.removeEventListener("beforeunload", uyar);
+  }, [dirty]);
 
   // Görünmeyen bir sekmede kalma (ör. "bu rolün gözüyle bak" açıldığında)
   useEffect(() => {
@@ -1225,6 +1288,26 @@ function Panel({
       (k) => JSON.stringify(draft[k]) !== JSON.stringify(content[k])
     );
     if (await persist(draft, keys)) notify("Kaydedildi. Değişiklikler siteye yansıdı.");
+  }
+
+  /** Yalnızca bir bölümü kaydeder; diğer bölümlerdeki kaydedilmemiş düzenlemeler taslakta kalır. */
+  async function saveSection(key: keyof SiteContent) {
+    setSaving(true);
+    const { error } = await sb.from("site_content").upsert([{ key, value: draft[key], updated_at: new Date().toISOString() }]);
+    setSaving(false);
+    if (error) return notify("Kaydedilemedi: " + error.message);
+    setContent((c) => ({ ...c, [key]: draft[key] }));
+    notify("Kaydedildi. Ana sayfa ve menü en geç 15 saniye içinde güncellenir.");
+  }
+
+  /** Kaydetmeden önizleme: taslak yalnızca bu tarayıcıda saklanır, ana sayfa ?onizleme=1 ile açılır. */
+  function onizle() {
+    try {
+      window.localStorage.setItem(ONIZLEME_ANAHTARI, JSON.stringify({ at: Date.now(), home: draft.home, nav: draft.nav, footer: draft.footer }));
+      window.open("/?onizleme=1", "_blank", "noopener");
+    } catch {
+      notify("Önizleme açılamadı (tarayıcı depolaması kapalı olabilir).");
+    }
   }
 
   const traffic = useMemo(() => summarize(views, range), [views, range]);
@@ -1325,9 +1408,7 @@ function Panel({
   );
 
   const g = draft.general;
-  const h = draft.home;
   const setG = (patch: Partial<SiteContent["general"]>) => upd("general", { ...g, ...patch });
-  const setH = (patch: Partial<SiteContent["home"]>) => upd("home", { ...h, ...patch });
   const co = draft.company;
   const setCo = (patch: Partial<SiteContent["company"]>) => upd("company", { ...co, ...patch });
   // Yasal metin düzenleyici: hazır metinle aynıysa kayıt tutulmaz; boş bırakılırsa sayfada hazır metin görünür
@@ -1358,22 +1439,35 @@ function Panel({
           </div>
         </div>
 
-        <div className={`${card} space-y-5 p-5 sm:p-7`}>
-          <h2 className="hd text-xl font-extrabold">Ana sayfa</h2>
-          <TextField label="Büyük başlık" value={h.heroTitle} onChange={(v) => setH({ heroTitle: v })} />
-          <TextField label="Alt yazı" multiline value={h.heroSub} onChange={(v) => setH({ heroSub: v })} />
-          <div className="grid gap-5 sm:grid-cols-2">
-            <TextField label="Ana buton yazısı" value={h.ctaPrimary} onChange={(v) => setH({ ctaPrimary: v })} />
-            <TextField label="İkinci buton yazısı" value={h.ctaSecondary} onChange={(v) => setH({ ctaSecondary: v })} />
-          </div>
-        </div>
+        <SiteYayinda
+          bakim={g.maintenance}
+          onBakim={(v) => setG({ maintenance: v })}
+          izinli={draft.erisim.bakimdaGirebilir}
+          onIzinli={(v) => upd("erisim", { ...draft.erisim, bakimdaGirebilir: v })}
+          isCeo={isCeo && !viewAs}
+        />
 
         <div className={`${card} space-y-5 p-5 sm:p-7`}>
-          <h2 className="hd text-xl font-extrabold">Duyuru ve bakım</h2>
+          <h2 className="hd text-xl font-extrabold">Duyuru</h2>
           <Toggle label="Duyuru çubuğunu göster" hint="Sitenin üstünde kısa bir duyuru yazısı gösterilir." checked={g.announcementEnabled} onChange={(v) => setG({ announcementEnabled: v })} />
           <TextField label="Duyuru yazısı" value={g.announcementText} onChange={(v) => setG({ announcementText: v })} placeholder="Örn: Yeni yıl kampanyası başladı!" />
-          <Toggle label="Bakım modu" hint="Açıkken ziyaretçilere bakım ekranı gösterilir; yöneticiler siteyi görmeye devam eder." checked={g.maintenance} onChange={(v) => setG({ maintenance: v })} />
         </div>
+
+        <SiteMetinleri
+          home={draft.home}
+          nav={draft.nav}
+          footer={draft.footer}
+          seo={draft.seo}
+          kayitli={{ home: content.home, nav: content.nav, footer: content.footer, seo: content.seo }}
+          onHome={(v) => upd("home", v)}
+          onNav={(v) => upd("nav", v)}
+          onFooter={(v) => upd("footer", v)}
+          onSeo={(v) => upd("seo", v)}
+          onKaydet={(k) => void saveSection(k)}
+          onGeriAl={(k) => upd(k, content[k])}
+          kaydediliyor={saving}
+          onOnizle={onizle}
+        />
 
         <div className={`${card} space-y-5 p-5 sm:p-7`}>
           <h2 className="hd text-xl font-extrabold">İletişim ve sosyal medya</h2>
@@ -1493,8 +1587,13 @@ function Panel({
 
   const servicesTab = (
     <>
-      <Title eyebrow="Katalog" title="Hizmetler & Fiyatlar" desc="Hizmetlerin adı, açıklaması, fiyat yazısı ve yayın durumu." />
+      <Title eyebrow="Katalog" title="Hizmetler & Fiyatlar" desc="Hizmetlerin görünürlüğü, sipariş izni, adı, açıklaması ve fiyatları." />
       <div className="space-y-5">
+        <ErisimMatrisi value={draft.erisim} onChange={(v) => upd("erisim", v)} isCeo={isCeo && !viewAs} />
+        <p className="text-xs text-[#686868]">
+          Aşağıdaki katalog kartları yalnızca hizmetlerin adını, açıklamasını ve fiyat yazısını tutar. Sitede kimin hangi hizmeti
+          göreceği ve sipariş verebileceği yukarıdaki tablodan yönetilir.
+        </p>
         {draft.services.map((s, i) => (
           <div key={s.id} className={`${card} p-5 sm:p-7 ${s.active ? "" : "opacity-70"}`}>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1522,9 +1621,14 @@ function Panel({
               <TextField label="Sayfa adresi" value={s.href} onChange={(v) => setService(s.id, { href: v })} hint="Örn: /smm-panel" />
               <TextField label="Kısa açıklama" value={s.desc} onChange={(v) => setService(s.id, { desc: v })} />
             </div>
-            <div className="mt-5">
-              <Toggle label="Sitede yayında" checked={s.active} onChange={(v) => setService(s.id, { active: v })} />
-            </div>
+            <p className="mt-5 text-sm font-semibold">
+              {(() => {
+                const h = HIZMETLER.find((x) => x.yol === s.href);
+                if (!h) return "Bu kart sitede bir hizmet sayfasına bağlı değil.";
+                const e = draft.erisim.services[h.id];
+                return e.active ? "Sitede: aktif — görünürlük ve sipariş izni yukarıdaki tablodan yönetilir." : "Sitede: PASİF — yalnızca CEO / Admin görür.";
+              })()}
+            </p>
           </div>
         ))}
         <button
@@ -1809,7 +1913,7 @@ function Panel({
         {members.map((m) => {
           const self = m.id === profile.id;
           return (
-            <div key={m.id} className="flex flex-col gap-3 border-b border-[#111]/10 p-5 last:border-0 sm:flex-row sm:items-center sm:justify-between">
+            <div key={m.id} className="flex flex-col gap-3 border-b border-[#111]/10 p-5 last:border-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="truncate font-bold">
                   {memberLabel(m)} {self && <span className="ml-1 text-xs text-[#686868]">(sen)</span>}
@@ -1851,7 +1955,22 @@ function Panel({
                   {m.banned ? "Engeli kaldır" : "Engelle"}
                 </button>
                 {m.banned && <span className="rounded-full bg-[#111] px-3 py-1 text-xs font-bold text-[#f5c518]">ENGELLİ</span>}
+                {isCeo && !viewAs && (m.role === "mod" || m.role === "amele") && (
+                  <button type="button" className={btnGhost} onClick={() => setYetkiUye(yetkiUye === m.id ? null : m.id)}>
+                    {yetkiUye === m.id ? "Yetkileri kapat" : "Yetkiler"}
+                  </button>
+                )}
               </div>
+              {yetkiUye === m.id && (m.role === "mod" || m.role === "amele") && (
+                <UyeYetkileri
+                  sb={sb}
+                  notify={notify}
+                  uyeId={m.id}
+                  uyeAdi={memberLabel(m)}
+                  rolVarsayilani={perms[m.role] || []}
+                  onKapat={() => setYetkiUye(null)}
+                />
+              )}
             </div>
           );
         })}
@@ -1860,18 +1979,25 @@ function Panel({
   );
 
   const settingsTab = (
-    <SettingsTab
-      sb={sb}
-      profile={profile}
-      content={content}
-      onLogout={onLogout}
-      notify={notify}
-      onResetDefaults={() => {
-        setDraft(DEFAULT_CONTENT);
-        setTab("content");
-        notify("Varsayılanlar yüklendi. Kaydet’e basarsan uygulanır.");
-      }}
-    />
+    <>
+      <SettingsTab
+        sb={sb}
+        profile={profile}
+        content={content}
+        onLogout={onLogout}
+        notify={notify}
+        onResetDefaults={() => {
+          setDraft(DEFAULT_CONTENT);
+          setTab("content");
+          notify("Varsayılanlar yüklendi. Kaydet’e basarsan uygulanır.");
+        }}
+      />
+      {isCeo && !viewAs && (
+        <div className="mt-6">
+          <DepolamaDurumu sb={sb} notify={notify} />
+        </div>
+      )}
+    </>
   );
 
   const aiTab = (
@@ -1922,6 +2048,9 @@ function Panel({
     services: servicesTab,
     producers: producersTab,
     orders: <OrdersTab sb={sb} notify={notify} initialSearch={orderSearch} />,
+    deliveries: <TeslimatlarTab sb={sb} notify={notify} />,
+    packages: <PaketlerTab sb={sb} notify={notify} isCeo={isCeo && !viewAs} />,
+    finance: <FinansTab sb={sb} />,
     support: (
       <SupportTab
         sb={sb}
@@ -1936,7 +2065,7 @@ function Panel({
     ),
     wallet: <WalletTab sb={sb} notify={notify} canAdjust={isAdmin && !viewAs} />,
     payments: <PaymentsTab sb={sb} notify={notify} />,
-    influencers: <InfluencersTab sb={sb} notify={notify} />,
+    influencers: <InfluencersTab sb={sb} notify={notify} isCeo={isCeo && !viewAs} />,
     smm: <SmmTab sb={sb} notify={notify} />,
     members: membersTab,
     ai: aiTab,

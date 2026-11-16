@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "../../lib/supabase";
+import { uploadOrderFiles, type UploadedFile } from "../../lib/siparis";
+import { EkListesi, EkSecici, type Ek } from "../../components/DestekEkleri";
 
-type Msg = { sender: "customer" | "staff"; body: string; created_at: string };
-type Thread = { ticket: { no: string; subject: string; status: string }; messages: Msg[] };
+type Msg = { id: string; sender: "customer" | "staff"; body: string; attachments?: Ek[]; created_at: string };
+type Thread = { ticket: { no: string; subject: string; status: string; sahibi?: boolean }; messages: Msg[] };
+type Talep = { no: string; subject: string; status: string; updated_at: string; okunmamis: number };
+
+/** Durum değerleri değişmez; ekranda anlaşılır adlarla gösterilir */
+const DURUM: Record<string, string> = { Yeni: "Açık", Yanıtlandı: "İşlemde", Kapandı: "Çözüldü" };
+
+/** Ekleri giriş yapmış üyenin özel destek klasörüne yükler */
+async function ekleriYukle(files: File[]): Promise<UploadedFile[]> {
+  if (!files.length) return [];
+  return uploadOrderFiles(files, { amac: "destek", kind: "destek" });
+}
 
 async function api(body: Record<string, unknown>) {
   const sb = getSupabase();
@@ -101,14 +113,25 @@ export default function DestekPage() {
   const [thread, setThread] = useState<Thread | null>(null);
   const [qNotice, setQNotice] = useState("");
   const [reply, setReply] = useState("");
+  const [girisli, setGirisli] = useState(false);
+  const [ekler, setEkler] = useState<File[]>([]);
+  const [yanitEkler, setYanitEkler] = useState<File[]>([]);
+  const [talepler, setTalepler] = useState<Talep[]>([]);
 
-  // Giriş yapmış üyenin adını ve e-postasını forma önceden yaz
+  const taleplerimiOku = useCallback(async () => {
+    const r = await api({ action: "taleplerim" });
+    if (r.ok) setTalepler(r.json.talepler || []);
+  }, []);
+
+  // Giriş yapmış üyenin adını ve e-postasını forma önceden yaz; taleplerini listele
   useEffect(() => {
     let sb: ReturnType<typeof getSupabase> | null = null;
     try { sb = getSupabase(); } catch { return; }
     sb?.auth.getSession().then(({ data }) => {
       const u = data.session?.user;
       if (!u) return;
+      setGirisli(true);
+      void taleplerimiOku();
       const full = (u.user_metadata?.full_name as string | undefined) || "";
       if (full) setName(n => n || full);
       if (u.email) {
@@ -116,7 +139,7 @@ export default function DestekPage() {
         setQContact(c => c || u.email!);
       }
     });
-  }, []);
+  }, [taleplerimiOku]);
 
   async function create() {
     setNotice("");
@@ -125,33 +148,67 @@ export default function DestekPage() {
       return;
     }
     setBusy(true);
-    const r = await api({ action: "create", name, contact, subject, message, code });
+    try {
+      const yuklenen = await ekleriYukle(ekler);
+      const r = await api({ action: "create", name, contact, subject, message, code, ekler: yuklenen });
+      if (!r.ok) {
+        setBusy(false);
+        return setNotice(r.json.error || "Mesaj gönderilemedi.");
+      }
+      setCreatedNo(r.json.no);
+      setQNo(r.json.no);
+      setQContact(contact);
+      setSubject("");
+      setMessage("");
+      setCode("");
+      setEkler([]);
+      void taleplerimiOku();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Dosya yüklenemedi.");
+    }
     setBusy(false);
-    if (!r.ok) return setNotice(r.json.error || "Mesaj gönderilemedi.");
-    setCreatedNo(r.json.no);
-    setQNo(r.json.no);
-    setQContact(contact);
-    setSubject("");
-    setMessage("");
-    setCode("");
   }
 
-  async function lookup() {
-    setQNotice("");
-    const r = await api({ action: "lookup", no: qNo, contact: qContact });
+  const lookup = useCallback(async (no = qNo, sessiz = false) => {
+    if (!sessiz) setQNotice("");
+    const r = await api({ action: "lookup", no, contact: qContact });
     if (!r.ok) {
-      setThread(null);
-      return setQNotice(r.json.error || "Talep bulunamadı.");
+      if (!sessiz) {
+        setThread(null);
+        setQNotice(r.json.error || "Talep bulunamadı.");
+      }
+      return;
     }
     setThread(r.json as Thread);
-  }
+  }, [qNo, qContact]);
+
+  // Açık konuşma her 15 saniyede bir yenilenir (yeni mesajlar otomatik görünür)
+  useEffect(() => {
+    if (!thread) return;
+    const no = thread.ticket.no;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void lookup(no, true);
+    }, 15000);
+    return () => clearInterval(t);
+  }, [thread, lookup]);
 
   async function sendReply() {
-    if (!reply.trim()) return;
-    const r = await api({ action: "reply", no: qNo, contact: qContact, message: reply });
-    if (!r.ok) return setQNotice(r.json.error || "Gönderilemedi.");
-    setReply("");
-    setThread(r.json as Thread);
+    if (!reply.trim() && !yanitEkler.length) return;
+    setBusy(true);
+    try {
+      const yuklenen = await ekleriYukle(yanitEkler);
+      const r = await api({ action: "reply", no: thread?.ticket.no || qNo, contact: qContact, message: reply, ekler: yuklenen });
+      if (!r.ok) {
+        setBusy(false);
+        return setQNotice(r.json.error || "Gönderilemedi.");
+      }
+      setReply("");
+      setYanitEkler([]);
+      setThread(r.json as Thread);
+    } catch (e) {
+      setQNotice(e instanceof Error ? e.message : "Dosya yüklenemedi.");
+    }
+    setBusy(false);
   }
 
   return (
@@ -218,6 +275,11 @@ export default function DestekPage() {
                 </div>
                 <label className="ds-lab" htmlFor="m">MESAJIN</label>
                 <textarea className="ds-in" id="m" rows={5} value={message} onChange={e => setMessage(e.target.value)} placeholder="Nasıl yardımcı olabiliriz?" />
+                {girisli ? (
+                  <EkSecici dosyalar={ekler} onChange={setEkler} />
+                ) : (
+                  <p className="ds-desc" style={{ marginTop: 10 }}>Fotoğraf, video veya şarkı dosyası eklemek için <a href="/giris?next=/destek" style={{ fontWeight: 800, textDecoration: "underline" }}>giriş yap</a>.</p>
+                )}
                 <button className="ds-btn" onClick={create} disabled={busy}>{busy ? "GÖNDERİLİYOR…" : "MESAJI GÖNDER ↗"}</button>
                 {notice && <p className="ds-msg">{notice}</p>}
               </>
@@ -231,6 +293,27 @@ export default function DestekPage() {
             </div>
             <p className="ds-desc">Talep numaran ve mesajda yazdığın iletişim bilgisiyle sorgula.</p>
 
+            {girisli && talepler.length > 0 && (
+              <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+                <span className="ds-lab" style={{ margin: 0 }}>TALEPLERİM</span>
+                {talepler.map((t) => (
+                  <button
+                    key={t.no}
+                    type="button"
+                    onClick={() => { setQNo(t.no); void lookup(t.no); }}
+                    style={{ textAlign: "left", border: "2.5px solid #111", borderRadius: 16, padding: "10px 12px", background: thread?.ticket.no === t.no ? "#fff6cf" : "#fff", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 10 }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>
+                      {t.no} · {t.subject}
+                      <br />
+                      <small style={{ color: "#686868", fontWeight: 600 }}>{DURUM[t.status] || t.status}</small>
+                    </span>
+                    {t.okunmamis > 0 && <span className="ds-tag st" style={{ alignSelf: "center", whiteSpace: "nowrap" }}>{t.okunmamis} yeni</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="ds-row">
               <div>
                 <label className="ds-lab" htmlFor="qn">TALEP NUMARASI</label>
@@ -241,7 +324,7 @@ export default function DestekPage() {
                 <input className="ds-in" id="qc" value={qContact} onChange={e => setQContact(e.target.value)} placeholder="Mesajda yazdığın" />
               </div>
             </div>
-            <button className="ds-btn dark" onClick={lookup}>SORGULA</button>
+            <button className="ds-btn dark" onClick={() => lookup()}>SORGULA</button>
             {qNotice && <p className="ds-msg">{qNotice}</p>}
 
             {thread && (
@@ -249,18 +332,20 @@ export default function DestekPage() {
                 <div className="ds-meta">
                   <span className="ds-tag">{thread.ticket.no}</span>
                   <span>{thread.ticket.subject}</span>
-                  <span className="ds-tag st">{thread.ticket.status}</span>
+                  <span className="ds-tag st">{DURUM[thread.ticket.status] || thread.ticket.status}</span>
                 </div>
                 {thread.messages.map((m, i) => (
-                  <div key={i} className={`ds-bubble ${m.sender}`}>
+                  <div key={m.id || i} className={`ds-bubble ${m.sender}`}>
                     <p>{m.body}</p>
+                    {m.attachments && m.attachments.length > 0 && m.id && <EkListesi mesajId={m.id} ekler={m.attachments} karanlik={m.sender === "staff"} />}
                     <small>{m.sender === "staff" ? "HITY7 Ekibi" : "Sen"} · {new Date(m.created_at).toLocaleString("tr-TR")}</small>
                   </div>
                 ))}
                 {thread.ticket.status !== "Kapandı" && (
                   <div className="ds-reply">
                     <textarea className="ds-in" rows={3} value={reply} onChange={e => setReply(e.target.value)} placeholder="Yanıtını yaz…" />
-                    <button className="ds-btn" onClick={sendReply}>YANIT GÖNDER ↗</button>
+                    {thread.ticket.sahibi && <EkSecici dosyalar={yanitEkler} onChange={setYanitEkler} />}
+                    <button className="ds-btn" onClick={sendReply} disabled={busy}>{busy ? "GÖNDERİLİYOR…" : "YANIT GÖNDER ↗"}</button>
                   </div>
                 )}
               </div>

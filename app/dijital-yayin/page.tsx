@@ -6,6 +6,7 @@ import Link from "next/link";
 import { istekKimligi, sendOrder, uploadOrderFiles, type UploadedFile } from "../../lib/siparis";
 import { useSiteContent } from "../../lib/use-site-content";
 import SozlesmeOnay from "../../components/SozlesmeOnay";
+import SiparisOnizleme from "../../components/SiparisOnizleme";
 
 // Fiyatlar yönetim panelindeki "Sipariş fiyatları"ndan gelir (0 = henüz belirlenmedi)
 const PRICES = {
@@ -148,6 +149,11 @@ export default function DigitalYayinPage() {
   const [doneCode, setDoneCode] = useState("");
   // Tekrar koruması: başvuru yeniden gönderilirse (ör. bağlantı koptuysa) ikinci kez ücretlendirilmez
   const istekRef = useRef<{ key: string; sig: string } | null>(null);
+  // Sipariş önizlemesi (doğrudan sipariş: onaylanınca dosyalar yüklenir ve ücret bakiyeden düşülür)
+  type Trk = { title: string; explicit: string; instrumental: string; songwriter: string; composer: string; language: string };
+  const [onizleme, setOnizleme] = useState<{ list: Trk[]; audios: File[]; all: File[] } | null>(null);
+  const [onizHata, setOnizHata] = useState("");
+  const [eksik, setEksik] = useState<number | null>(null);
   const yayinPrices = useSiteContent().pricing.yayin;
   const priceLabel = (id: string) => {
     const n = Number(yayinPrices[id as keyof typeof yayinPrices]) || 0;
@@ -176,6 +182,7 @@ export default function DigitalYayinPage() {
   };
 
   const activeFormat = formats.find((f) => f.id === format)!;
+  const yayinUcreti = Math.round((Number(yayinPrices[format as keyof typeof yayinPrices]) || 0) * 100) / 100;
 
   const toggleStore = (store: string) => {
     setStores((current) =>
@@ -206,10 +213,21 @@ export default function DigitalYayinPage() {
     const missing = list.findIndex((t, i) => !t.title || !audios[i]);
     if (missing >= 0) return setNotice(`Şarkı ${missing + 1}: şarkı adı ve master ses dosyası gerekli.`);
     const all = [coverFile, ...(audios as File[])];
+    // Dijital Yayın: ses WAV veya FLAC, kapak JPG veya PNG (aynı kural sunucuda da denetlenir)
+    const yanlis = (audios as File[]).find((f) => !/\.(wav|flac)$/i.test(f.name));
+    if (yanlis) return setNotice(`“${yanlis.name}”: master ses dosyası WAV veya FLAC olmalı.`);
     const big = all.find((f) => f.size > 50 * 1024 * 1024);
     if (big) return setNotice(`“${big.name}” 50 MB'tan büyük. Daha küçük bir WAV/FLAC dosyası yükle.`);
+    setOnizHata("");
+    setOnizleme({ list, audios: audios as File[], all });
+  };
 
+  /** Onay ekranında "Onayla": dosyaları özel depoya yükler, başvuruyu oluşturur ve ücreti bakiyeden düşer. */
+  const gonder = async () => {
+    if (!onizleme || !coverFile) return;
+    const { list, audios, all } = onizleme;
     setSending(true);
+    setOnizHata("");
     try {
       const uploaded: UploadedFile[] = [];
       setProgress(`Dosyalar yükleniyor… 0/${all.length}`);
@@ -251,15 +269,23 @@ export default function DigitalYayinPage() {
         tracks: list,
         details: notes.trim() ? [["Ek notlar", notes.trim()]] : [],
         files: uploaded,
+        beklenenTutar: yayinUcreti,
+        yonlendir: false,
       });
-      if (!r.ok) setNotice(r.error || "Başvuru gönderilemedi.");
-      else {
+      if (r.ok) {
         istekRef.current = null;
+        setOnizleme(null);
         setDoneCode(r.code || "");
         setSubmitted(true);
-      }
+      } else if (r.needTopup) {
+        setEksik(r.missing || null);
+        setOnizHata(r.error || "Yetersiz bakiye.");
+      } else if (r.fiyatDegisti) {
+        setOnizleme(null);
+        setNotice(r.error || "Fiyat değişti. Güncel tutarı kontrol edip yeniden onayla.");
+      } else setOnizHata(r.error || "Başvuru gönderilemedi.");
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Dosyalar yüklenemedi. Lütfen tekrar dene.");
+      setOnizHata(err instanceof Error ? err.message : "Dosyalar yüklenemedi. Lütfen tekrar dene.");
     }
     setProgress("");
     setSending(false);
@@ -636,7 +662,7 @@ export default function DigitalYayinPage() {
                     <Upload
                       label="MASTER SES DOSYASI"
                       description="WAV tercih edilir. Her şarkı ayrı dosya olmalıdır. En fazla 50 MB."
-                      accept=".wav,.flac,.mp3,.m4a,audio/*"
+                      accept=".wav,.flac,audio/wav,audio/flac"
                       onChange={(f) => setSingleAudio(f?.[0] || null)}
                     />
                     <Upload
@@ -687,7 +713,7 @@ export default function DigitalYayinPage() {
                               <Upload
                                 label="MASTER SES DOSYASI"
                                 description="WAV tercih edilir. En fazla 50 MB."
-                                accept=".wav,.flac,.mp3,.m4a,audio/*"
+                                accept=".wav,.flac,audio/wav,audio/flac"
                                 onChange={(f) => setTrackAudio((cur) => cur.map((x, idx) => (idx === i ? f?.[0] || null : x)))}
                               />
                               <Field
@@ -956,6 +982,22 @@ export default function DigitalYayinPage() {
           <span className="text-[#f5c518]">YOUR MUSIC. YOUR WORLD.</span>
         </footer>
       </div>
+
+      <SiparisOnizleme
+        acik={!!onizleme}
+        baslik={`Dijital yayın · ${activeFormat.name}`}
+        kalemler={[
+          { ad: `Dijital yayın · ${activeFormat.name}`, not: `${artistName.trim()} · ${releaseName.trim()} · ${onizleme?.list.length || 0} şarkı`, tutar: yayinUcreti },
+          { ad: "Dosyalar", not: `${onizleme?.all.length || 0} dosya (kapak + master ses) onayladığında yüklenir` },
+        ]}
+        araToplam={yayinUcreti}
+        toplam={yayinUcreti}
+        gonderiliyor={sending}
+        hata={progress || onizHata}
+        eksik={eksik}
+        onOnayla={gonder}
+        onKapat={() => setOnizleme(null)}
+      />
     </main>
   );
 }

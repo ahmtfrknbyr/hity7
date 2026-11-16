@@ -53,15 +53,15 @@ export default function GlobalFooter() {
           <ul className="h7-ft-links">
             {LEGAL_DOCS.map((d) => (
               <li key={d.slug}>
-                <Link href={`/yasal/${d.slug}`}>{d.short}</Link>
+                <Link href={`/yasal/${d.slug}`}>{content.footer.legal[d.slug] || d.short}</Link>
               </li>
             ))}
             <li>
-              <Link href="/destek">Destek</Link>
+              <Link href="/destek">{content.footer.destek || "Destek"}</Link>
             </li>
           </ul>
         </nav>
-        <p className="h7-ft-copy">© {c.title || brand}. Tüm hakları saklıdır.</p>
+        <p className="h7-ft-copy">{content.footer.copyright.trim() || `© ${c.title || brand}. Tüm hakları saklıdır.`}</p>
       </div>
     </footer>
   );

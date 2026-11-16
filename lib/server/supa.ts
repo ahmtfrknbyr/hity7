@@ -71,7 +71,7 @@ export async function anonDb(path: string, init: RequestInit = {}) {
   return res;
 }
 
-export type AuthUser = { id: string; email: string; name: string };
+export type AuthUser = { id: string; email: string; name: string; verified: boolean };
 
 /** İstekteki "Authorization: Bearer <oturum>" başlığından kullanıcıyı doğrular. */
 export async function getUser(req: Request): Promise<AuthUser | null> {
@@ -83,11 +83,22 @@ export async function getUser(req: Request): Promise<AuthUser | null> {
     const u = await res.json();
     if (!u?.id) return null;
     const meta = (u.user_metadata || {}) as Record<string, unknown>;
-    return { id: String(u.id), email: String(u.email || ""), name: String(meta.full_name || meta.name || "") };
+    // E-posta doğrulanmış mı? (Supabase "Confirm email" kapalıysa kayıt anında otomatik doğrulanmış sayılır.)
+    return {
+      id: String(u.id),
+      email: String(u.email || ""),
+      name: String(meta.full_name || meta.name || ""),
+      verified: !!(u.email_confirmed_at || u.confirmed_at),
+    };
   } catch {
     return null;
   }
 }
+
+/** Doğrulanmamış e-postayla sipariş / ödeme / dosya işlemi yapılamaz. */
+export const DOGRULAMA_HATASI =
+  "E-posta adresini doğrulaman gerekiyor. Gelen kutundaki (ve spam klasöründeki) doğrulama bağlantısına tıkla, sonra tekrar dene.";
+export const dogrulamaGerekli = () => fail(DOGRULAMA_HATASI, 403, { needVerify: true });
 
 export type Role = "ceo" | "admin" | "mod" | "amele" | "member";
 export const ROLE_RANK: Record<Role, number> = { ceo: 100, admin: 80, mod: 50, amele: 30, member: 0 };
@@ -117,10 +128,18 @@ export async function getRole(userId: string, userAuth?: string): Promise<Role |
   return role in ROLE_RANK ? role : "member";
 }
 
-/** Rol bu panel bölümüne erişebilir mi? (CEO ve admin her şeye erişir; mod/amele role_permissions tablosuna göre.) */
-export async function roleCan(role: Role, tab: string, userAuth?: string): Promise<boolean> {
+/**
+ * Rol bu panel bölümüne erişebilir mi? CEO ve admin her şeye erişir. Moderatör / personel için CEO'nun o kişiye özel
+ * tanımladığı yetki listesi (user_permission_sets) varsa yalnızca o liste, yoksa rol varsayılanları (role_permissions).
+ * Veritabanındaki h7_yetki ile aynı kural.
+ */
+export async function roleCan(role: Role, tab: string, userAuth?: string, userId?: string): Promise<boolean> {
   if (role === "ceo" || role === "admin") return true;
   if (role !== "mod" && role !== "amele") return false;
+  if (userId) {
+    const own = await readAs<{ tabs: string[] }[]>(`user_permission_sets?user_id=eq.${encodeURIComponent(userId)}&select=tabs`, userAuth);
+    if (Array.isArray(own) && own.length) return Array.isArray(own[0].tabs) && own[0].tabs.includes(tab);
+  }
   const rows = await readAs<unknown[]>(`role_permissions?role=eq.${role}&tab=eq.${encodeURIComponent(tab)}&select=tab`, userAuth);
   return Array.isArray(rows) && rows.length > 0;
 }
@@ -132,7 +151,7 @@ export async function getStaff(req: Request, tab?: string): Promise<Staff | null
   const auth = req.headers.get("authorization") || undefined;
   const role = await getRole(user.id, auth);
   if (!role || role === "member") return null;
-  if (tab && !(await roleCan(role, tab, auth))) return null;
+  if (tab && !(await roleCan(role, tab, auth, user.id))) return null;
   return { ...user, role };
 }
 

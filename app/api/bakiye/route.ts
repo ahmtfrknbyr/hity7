@@ -5,7 +5,8 @@
  * tarayıcı bakiyeyi hiçbir şekilde doğrudan değiştiremez (veritabanı tetikleyicisi de engeller).
  */
 import { createHmac, randomBytes } from "crypto";
-import { audit, clean, db, fail, getUser, rpc, serverReady } from "../../../lib/server/supa";
+import { onizlemeKapali, onizlemeMi } from "../../../lib/server/onizleme";
+import { audit, clean, db, dogrulamaGerekli, fail, getUser, rpc, serverReady } from "../../../lib/server/supa";
 import { consentRecord } from "../../../lib/server/yasal";
 
 type Tx = { id: number; kind: "topup" | "spend"; amount: number; status: string; provider: string | null; note: string | null; ref: string | null; created_at: string };
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
 
   const user = await getUser(req);
   if (!user) return fail("Giriş gerekli.", 401, { needLogin: true });
+  if (!user.verified) return dogrulamaGerekli();
 
   let b: Record<string, unknown> = {};
   try {
@@ -53,6 +55,9 @@ export async function POST(req: Request) {
   } catch {
     return fail("Geçersiz istek.");
   }
+
+  // Önizleme ortamında yalnızca özet okunabilir; yükleme / ödeme başlatma / havale bildirimi kapalıdır
+  if (onizlemeMi() && b.action !== "summary") return onizlemeKapali();
 
   if (b.action === "summary") {
     const methods = await db<{ kind: string; name: string; mode: string; iban: string; holder: string }[]>(
@@ -103,7 +108,11 @@ export async function POST(req: Request) {
     return Response.json({ ok: true, ref });
   }
 
-  /* ---- PayTR iFrame (kredi / banka kartı) ---- */
+  /* ---- PayTR iFrame (kredi / banka kartı) ----
+   * Test modu: test_mode=1 ile PayTR test ödemesi açılır, kayıt paytr_payments'a "test" olarak yazılır ve
+   *            ödeme başarılı olsa bile BAKİYEYE HİÇBİR ŞEY EKLENMEZ.
+   * Canlı mod: test_mode=0; bakiye yalnızca imzası doğrulanmış "success" bildirimiyle ve tutar eşleşirse, TEK kez eklenir.
+   */
   if (b.action === "paytr_start") {
     const provs = await db<{ id: string; mode: string }[]>("payment_providers?kind=eq.paytr&active=eq.true&select=id,mode&limit=1");
     const prov = Array.isArray(provs.body) ? provs.body[0] : undefined;
@@ -129,13 +138,26 @@ export async function POST(req: Request) {
       .update(s.mid + ip + oid + user.email + kurus + basket + noInst + maxInst + currency + test + s.salt)
       .digest("base64");
 
-    // Bekleyen kaydı önce aç; PayTR bildirimi bunu "ok" yapar
-    const ins = await db("wallet_transactions", {
+    // Ödeme kaydı (test ve canlı ayrı). Canlıda ayrıca bekleyen bakiye hareketi açılır; bildirim bunu "ok" yapar.
+    const pay = await db("paytr_payments", {
       method: "POST",
       prefer: "return=minimal",
-      body: JSON.stringify({ user_id: user.id, kind: "topup", amount, status: "pending", provider: "paytr", ref: oid, note: test === "1" ? "PayTR (TEST modu)" : "PayTR ile bakiye yükleme" }),
+      body: JSON.stringify({ merchant_oid: oid, user_id: user.id, amount, mode: test === "1" ? "test" : "live" }),
     });
-    if (!ins.ok) return fail("Kayıt oluşturulamadı.", 500);
+    if (!pay.ok) {
+      return fail(
+        pay.status === 404 ? "Kartla ödeme altyapısı güncellemesi henüz kurulmamış (veritabanı: migration 10)." : "Ödeme kaydı oluşturulamadı.",
+        503
+      );
+    }
+    if (test === "0") {
+      const ins = await db("wallet_transactions", {
+        method: "POST",
+        prefer: "return=minimal",
+        body: JSON.stringify({ user_id: user.id, kind: "topup", amount, status: "pending", provider: "paytr", ref: oid, note: "PayTR ile bakiye yükleme" }),
+      });
+      if (!ins.ok) return fail("Kayıt oluşturulamadı.", 500);
+    }
 
     const origin = new URL(req.url).origin;
     const form = new URLSearchParams({
@@ -167,12 +189,12 @@ export async function POST(req: Request) {
       out = { status: "failed", reason: "PayTR'a ulaşılamadı" };
     }
     if (out.status !== "success" || !out.token) {
-      await db(`wallet_transactions?ref=eq.${oid}&status=eq.pending`, { method: "PATCH", body: JSON.stringify({ status: "failed", note: "PayTR başlatılamadı" }) });
-      await audit(user.id, "odeme.paytr.baslatilamadi", oid, { reason: out.reason || null });
+      await rpc("h7_paytr_sonuc", { p_oid: oid, p_status: "failed", p_total_kurus: null, p_reason: "PayTR başlatılamadı" });
+      await audit(user.id, "odeme.paytr.baslatilamadi", oid, { reason: out.reason || null, mod: test === "1" ? "test" : "canli" });
       return fail("Ödeme sayfası açılamadı: " + (out.reason || "bilinmeyen hata"), 502);
     }
-    await audit(user.id, "odeme.paytr.baslatildi", oid, { amount, sozlesme: await consentRecord(["on-bilgilendirme", "mesafeli-satis"]) });
-    return Response.json({ ok: true, iframe: `https://www.paytr.com/odeme/guvenli/${out.token}`, ref: oid });
+    await audit(user.id, "odeme.paytr.baslatildi", oid, { amount, mod: test === "1" ? "test" : "canli", sozlesme: await consentRecord(["on-bilgilendirme", "mesafeli-satis"]) });
+    return Response.json({ ok: true, iframe: `https://www.paytr.com/odeme/guvenli/${out.token}`, ref: oid, test: test === "1" });
   }
 
   return fail("Bilinmeyen işlem.");

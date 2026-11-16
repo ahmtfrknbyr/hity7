@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getSupabase } from "../../lib/supabase";
 import { istekKimligi, sendOrder } from "../../lib/siparis";
 import SozlesmeOnay from "../../components/SozlesmeOnay";
+import SiparisOnizleme from "../../components/SiparisOnizleme";
 
 const categories = [
   { id: "all", name: "Tüm Hizmetler", icon: "✳" },
@@ -43,6 +44,9 @@ export default function SmmPanelPage() {
   const [sending, setSending] = useState(false);
   const [doneCode, setDoneCode] = useState("");
   const [onay, setOnay] = useState(false);
+  const [onizleme, setOnizleme] = useState(false);
+  const [onizHata, setOnizHata] = useState("");
+  const [eksik, setEksik] = useState<number | null>(null);
   // Tekrar koruması: aynı sipariş yeniden gönderilirse ikinci kez ücretlendirilmez
   const istekRef = useRef<{ key: string; sig: string } | null>(null);
 
@@ -117,15 +121,32 @@ export default function SmmPanelPage() {
       return setNotice(`Miktar ${selected.min.toLocaleString("tr-TR")} ile ${selected.max.toLocaleString("tr-TR")} arasında olmalı.`);
     }
     if (!onay) return setNotice("Siparişi oluşturmak için sözleşme onay kutusunu işaretle.");
+    setOnizHata("");
+    setEksik(null);
+    setOnizleme(true);
+  }
+
+  /** Önizlemede "Onayla": sipariş oluşturulur ve tutar bakiyeden tek işlemde düşülür. */
+  async function confirmOrder() {
+    if (!selected) return;
     setSending(true);
-    const istekId = istekKimligi(istekRef, `${selected.id}|${amount}|${target.trim()}`);
-    const r = await sendOrder({ type: "smm", accept: onay, istekId, serviceId: selected.id, quantity: amount, target: target.trim(), details: [] });
+    setOnizHata("");
+    const istekId = istekKimligi(istekRef, `${selected.id}|${amount}|${target.trim()}|${total}`);
+    const r = await sendOrder({ type: "smm", accept: onay, istekId, serviceId: selected.id, quantity: amount, target: target.trim(), details: [], beklenenTutar: total, yonlendir: false });
     setSending(false);
-    if (!r.ok) return setNotice(r.error || "Sipariş gönderilemedi.");
-    istekRef.current = null;
-    setDoneCode(r.code || "");
-    setTarget("");
-    setOnay(false);
+    if (r.ok) {
+      istekRef.current = null;
+      setOnizleme(false);
+      setDoneCode(r.code || "");
+      setTarget("");
+      setOnay(false);
+    } else if (r.needTopup) {
+      setEksik(r.missing || null);
+      setOnizHata(r.error || "Yetersiz bakiye.");
+    } else if (r.fiyatDegisti) {
+      setOnizleme(false);
+      setNotice(r.error || "Fiyat değişti. Güncel tutarı kontrol edip yeniden onayla.");
+    } else setOnizHata(r.error || "Sipariş gönderilemedi.");
   }
 
   return (
@@ -757,6 +778,18 @@ export default function SmmPanelPage() {
           .signup-link, .category-button, .service-row, .order-button, .form-input, .search-box, .bottom-banner > a { transition: none; }
         }
       `}</style>
+      <SiparisOnizleme
+        acik={onizleme && !!selected}
+        baslik={selected ? selected.name : "SMM siparişi"}
+        kalemler={selected ? [{ ad: `${selected.name} · ${amount.toLocaleString("tr-TR")} adet`, not: target.trim(), tutar: total }] : []}
+        araToplam={total}
+        toplam={total}
+        gonderiliyor={sending}
+        hata={onizHata}
+        eksik={eksik}
+        onOnayla={confirmOrder}
+        onKapat={() => setOnizleme(false)}
+      />
     </main>
   );
 }

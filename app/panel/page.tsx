@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "../../lib/supabase";
 
@@ -220,6 +221,14 @@ function OrderDetail({ order, onChanged }: { order: Order; onChanged: () => void
               <b style={{ whiteSpace: "nowrap" }}>{tl(Number(x.total) || 0)}</b>
             </div>
           ))}
+        </div>
+      )}
+      {(order.type === "remake" || order.type === "mix") && (
+        <div style={{ marginBottom: 16 }}>
+          <Link className="pn-file" href="/teslim">
+            <span>Teslimat Merkezi · dosyalar, sürümler ve onay</span>
+            <span>Aç →</span>
+          </Link>
         </div>
       )}
       {deliveries.length > 0 && (

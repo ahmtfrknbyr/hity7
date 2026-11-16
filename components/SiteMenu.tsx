@@ -4,22 +4,27 @@
  * components/SiteMenu.tsx
  * Tüm sayfalarda aynı görünen ortak site menüsü (kendi stiliyle, projedeki CSS'e bağlı değildir).
  * Menü bağlantıları yalnızca giriş yapmış üyelere gösterilir; ziyaretçiler sadece logo + Giriş / Üye Ol görür.
- * Sepet düğmesi (components/Sepet.tsx) herkese, sağ üstte ürün sayısıyla görünür.
+ * Sepet yoktur: her hizmet doğrudan sipariş ve cüzdandan ödemeyle çalışır.
+ * Menü başlıkları CEO panelinden (Site Yazıları → Menü) düzenlenir; adresler değişmez.
+ * Rolüne kapalı hizmetler (CEO panelinde görünürlük ayarı) menüde gösterilmez.
  * Kullanım: <SiteMenu active="/remake-beat" />   (koyu sayfalarda: <SiteMenu active="..." dark />)
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import BakiyeChip from "./BakiyeChip";
-import SepetButonu from "./Sepet";
 import { getSupabase } from "../lib/supabase";
+import { useSiteContent } from "../lib/use-site-content";
+import { useRol } from "../lib/use-rol";
+import { hizmetGorunur, type HizmetId } from "../lib/erisim";
+import type { NavContent } from "../lib/site-content";
 
-const LINKS: [string, string][] = [
-  ["/smm-panel", "SMM PANEL"],
-  ["/influencer-marketing", "INFLUENCER"],
-  ["/remake-beat", "REMAKE BEAT"],
-  ["/mix-mastering", "MIX & MASTERING"],
-  ["/dijital-yayin", "DİJİTAL YAYIN"],
-  ["/destek", "DESTEK"],
+const LINKS: { href: string; nav: keyof NavContent; hizmet?: HizmetId }[] = [
+  { href: "/smm-panel", nav: "smm", hizmet: "smm" },
+  { href: "/influencer-marketing", nav: "influencer", hizmet: "influencer" },
+  { href: "/remake-beat", nav: "remake", hizmet: "remake" },
+  { href: "/mix-mastering", nav: "mix", hizmet: "mix" },
+  { href: "/dijital-yayin", nav: "yayin", hizmet: "yayin" },
+  { href: "/destek", nav: "destek" },
 ];
 
 const CSS = `
@@ -92,27 +97,31 @@ export default function SiteMenu({ active = "", dark = false }: { active?: strin
   const [open, setOpen] = useState(false);
   const auth = useAuth();
   const member = auth === "in";
+  const content = useSiteContent();
+  const rol = useRol();
+  const nav = content.nav;
+  const r = rol === "load" || rol === "visitor" || rol === "banned" ? (member ? "member" : null) : rol;
+  const links = LINKS.filter((l) => !l.hizmet || hizmetGorunur(content.erisim, l.hizmet, r));
 
   return (
     <header className={`sm-bar ${dark ? "dark" : ""}`}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <div className="sm-in">
-        <Link href="/" className="sm-logo">HITY7<span className="sm-dot" /></Link>
+        <Link href="/" className="sm-logo">{content.general.siteName || "HITY7"}<span className="sm-dot" /></Link>
 
         {member && (
           <nav className="sm-nav" aria-label="Site menüsü">
-            {LINKS.map(([href, label]) => (
-              <a key={href} href={href} className={active === href ? "on" : ""}>{label}</a>
+            {links.map((l) => (
+              <a key={l.href} href={l.href} className={active === l.href ? "on" : ""}>{nav[l.nav]}</a>
             ))}
           </nav>
         )}
 
         <div className="sm-right">
-          <SepetButonu dark={dark} />
           {member && (
             <>
               <BakiyeChip dark={dark} hideWhenOut />
-              <a href="/panel" className="sm-acc member">HESABIM ↗</a>
+              <a href="/panel" className="sm-acc member">{nav.account} ↗</a>
               <button type="button" className="sm-burger" aria-label={open ? "Menüyü kapat" : "Menüyü aç"} aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? "✕" : "☰"}</button>
             </>
           )}
@@ -127,11 +136,12 @@ export default function SiteMenu({ active = "", dark = false }: { active?: strin
 
       {member && (
         <div className={`sm-drawer ${open ? "open" : ""}`}>
-          <Link href="/" className={active === "/" ? "on" : ""}>ANA SAYFA</Link>
-          {LINKS.map(([href, label]) => (
-            <a key={href} href={href} className={active === href ? "on" : ""}>{label}</a>
+          <Link href="/" className={active === "/" ? "on" : ""}>{nav.home}</Link>
+          {links.map((l) => (
+            <a key={l.href} href={l.href} className={active === l.href ? "on" : ""}>{nav[l.nav]}</a>
           ))}
-          <a href="/panel" className={active === "/panel" ? "on" : ""}>HESABIM</a>
+          <a href="/bakiye" className={active === "/bakiye" ? "on" : ""}>CÜZDANIM</a>
+          <a href="/panel" className={active === "/panel" ? "on" : ""}>{nav.account}</a>
         </div>
       )}
     </header>

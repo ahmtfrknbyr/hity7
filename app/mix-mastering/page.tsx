@@ -5,7 +5,9 @@ import { uploadOrderFiles, type UploadedFile } from "../../lib/siparis";
 import { useSiteContent } from "../../lib/use-site-content";
 import { getSupabase } from "../../lib/supabase";
 import EkHizmetKarti from "../../components/EkHizmetKarti";
-import { addMain, addonKey, currentUserId, mainKey, openCart, releaseFiles, useCart, type CartAddon, type CartMain } from "../../lib/sepet";
+import { istekKimligi, sendOrder } from "../../lib/siparis";
+import SozlesmeOnay from "../../components/SozlesmeOnay";
+import SiparisOnizleme from "../../components/SiparisOnizleme";
 import { addonFor } from "../../lib/sepet-hesap";
 
 type Service = "mix" | "stems";
@@ -714,7 +716,15 @@ export default function MixMasteringPage() {
   const [reverb, setReverb] = useState("Orta");
   const [delay, setDelay] = useState("Orta");
   const [notes, setNotes] = useState("");
-  const [added, setAdded] = useState<"" | "added" | "replaced">("");
+  const [doneCode, setDoneCode] = useState("");
+  const [addonId, setAddonId] = useState("");
+  const [onay, setOnay] = useState(false);
+  const [onizleme, setOnizleme] = useState(false);
+  const [onizHata, setOnizHata] = useState("");
+  const [eksik, setEksik] = useState<number | null>(null);
+  // Tekrar koruması ve aynı denemede dosyaların ikinci kez yüklenmemesi
+  const istekRef = useRef<{ key: string; sig: string } | null>(null);
+  const yuklenen = useRef<{ imza: string; out: UploadedFile[] } | null>(null);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState("");
   const [notice, setNotice] = useState("");
@@ -788,14 +798,10 @@ export default function MixMasteringPage() {
     [service, selectedProducer]
   );
 
-  // Sepet: bu hizmet sepette mi, yanında ek hizmet (remake) var mı
-  const cart = useCart();
-  const inCart = cart.lines.find((l): l is CartMain => l.key === mainKey("mix")) || null;
-  const addonLine = cart.lines.find((l): l is CartAddon => l.key === addonKey("mix")) || null;
-  const addonItem = addonLine ? addonFor(content, "mix", addonLine.addonId) : null;
-  const addonTotal = addonItem && addonLine ? addonItem.price * addonLine.qty : 0;
-  const cartFiles = inCart?.order.files || [];
-  const cartWork = cartFiles.filter((f) => f.kind !== "reference");
+  // Ek hizmet (sepetsiz: aynı siparişe eklenir; fiyat sunucuda yeniden hesaplanır)
+  const addonItem = addonId ? addonFor(content, "mix", addonId) : null;
+  const addonTotal = addonItem ? addonItem.price : 0;
+  const orderTotal = Math.round((price + addonTotal) * 100) / 100;
 
   const aiCandidate = files.find((file) => !file.name.toLowerCase().endsWith(".zip"));
 
@@ -840,7 +846,8 @@ export default function MixMasteringPage() {
   function addFiles(selected: FileList | null) {
     if (!selected) return;
 
-    const allowed = [".zip", ".wav", ".mp3", ".aiff", ".aif", ".flac"];
+    // Mix & Mastering: MP3, WAV, ZIP (aynı kural sunucuda da denetlenir)
+    const allowed = [".zip", ".wav", ".mp3"];
     const incoming = Array.from(selected);
 
     const invalid = incoming.filter(
@@ -851,7 +858,7 @@ export default function MixMasteringPage() {
     );
 
     if (invalid.length > 0) {
-      alert("Yalnızca ZIP, WAV, MP3, AIFF ve FLAC dosyaları yükleyebilirsiniz.");
+      setNotice("Yalnızca MP3, WAV ve ZIP dosyaları yükleyebilirsin.");
       return;
     }
 
@@ -867,18 +874,14 @@ export default function MixMasteringPage() {
     });
   }
 
-  /**
-   * Hizmeti sepete ekler (sepette varsa bu formla günceller; aynı hizmet iki kez eklenmez).
-   * Dosyalar şimdi yüklenir (giriş gerekir); sipariş ve ödeme sepette sözleşme onayı ve bakiye kontrolüyle yapılır.
-   */
+  /** Sipariş önizlemesini açar (sepet yok: doğrudan sipariş + cüzdandan ödeme). */
   async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setNotice("");
     setNeedLogin(false);
-    setAdded("");
+    setDoneCode("");
 
-    // Yeni dosya seçilmediyse sepette yüklü dosyalar korunur (ör. yalnızca prodüktör değiştirildiğinde)
-    if (files.length === 0 && cartWork.length === 0) {
+    if (files.length === 0) {
       setNotice("Lütfen vokal ve beat dosyalarını yükle.");
       return;
     }
@@ -887,54 +890,82 @@ export default function MixMasteringPage() {
       setNotice(`“${tooBig.name}” 50 MB'tan büyük. Dosyaları ZIP olarak bölüp tekrar dene.`);
       return;
     }
-
-    setSending(true);
-    try {
-      const owner = await currentUserId();
-      if (!owner) {
-        setNeedLogin(true);
-        setNotice("Dosyalarını yükleyip sepete eklemek için giriş yapmalısın.");
-        setSending(false);
-        return;
-      }
-      const total = files.length + (reference ? 1 : 0);
-      const work: UploadedFile[] = files.length
-        ? await uploadOrderFiles(files, { kind: "work", onProgress: (d) => setProgress(`Dosyalar yükleniyor… ${d}/${total}`) })
-        : cartWork;
-      const ref: UploadedFile[] = reference
-        ? await uploadOrderFiles([reference], { kind: "reference" })
-        : cartFiles.filter((f) => f.kind === "reference");
-      const uploaded = [...work, ...ref];
-      const refName = reference?.name || ref[0]?.name || "";
-      const r = addMain(
-        "mix",
-        {
-          service,
-          producerId: selectedProducer.id,
-          details: [
-            ["Mix karakteri", mixStyle],
-            ["Vokal / beat dengesi", vocalPosition],
-            ["Auto-Tune", autotune],
-            ["Reverb", reverb],
-            ["Delay", delay],
-            ...(refName ? ([["Referans şarkı", refName]] as [string, string][]) : []),
-            ...(notes.trim() ? ([["Prodüktöre not", notes.trim()]] as [string, string][]) : []),
-          ],
-          files: uploaded,
-        },
-        `${selectedProducer.name} · ${work.length} dosya${ref.length ? " + referans" : ""} · ${mixStyle}`,
-        { replace: true, owner }
-      );
-      // Yenileriyle değiştirilen eski dosyalar depodan silinir
-      if (r.previous) releaseFiles(r.previous.order.files.filter((f) => !uploaded.some((u) => u.url === f.url)));
-      setAdded(r.result === "replaced" ? "replaced" : "added");
-      setFiles([]);
-      setReference(null);
-      openCart();
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Dosyalar yüklenemedi. Lütfen tekrar dene.");
+    if (!onay) {
+      setNotice("Siparişi oluşturmak için sözleşme onay kutusunu işaretle.");
+      return;
     }
-    setProgress("");
+    const { data } = await getSupabase().auth.getSession().catch(() => ({ data: { session: null } }));
+    if (!data.session) {
+      setNeedLogin(true);
+      setNotice("Dosyalarını yükleyip sipariş vermek için giriş yapmalısın.");
+      return;
+    }
+    setOnizHata("");
+    setEksik(null);
+    setOnizleme(true);
+  }
+
+  /** Onay ekranında "Onayla": dosyaları özel depoya yükler, siparişi oluşturur ve tutarı bakiyeden düşer (tek işlem). */
+  async function confirmOrder() {
+    setSending(true);
+    setOnizHata("");
+    try {
+      const imza = JSON.stringify([...files.map((f) => [f.name, f.size]), reference ? [reference.name, reference.size] : null]);
+      let uploaded: UploadedFile[];
+      if (yuklenen.current?.imza === imza) uploaded = yuklenen.current.out;
+      else {
+        const work = await uploadOrderFiles(files, {
+          kind: "work",
+          hizmet: "mix",
+          onBytes: (l, t) => setProgress(`Dosyalar yükleniyor… %${Math.floor((l / Math.max(t, 1)) * 100)}`),
+        });
+        const ref: UploadedFile[] = reference ? await uploadOrderFiles([reference], { kind: "reference", hizmet: "mix" }) : [];
+        uploaded = [...work, ...ref];
+        yuklenen.current = { imza, out: uploaded };
+      }
+      setProgress("");
+      const refName = reference?.name || "";
+      const r = await sendOrder({
+        type: "mix",
+        accept: onay,
+        istekId: istekKimligi(istekRef, JSON.stringify([service, selectedProducer.id, addonId, imza, orderTotal])),
+        service,
+        producerId: selectedProducer.id,
+        details: [
+          ["Mix karakteri", mixStyle],
+          ["Vokal / beat dengesi", vocalPosition],
+          ["Auto-Tune", autotune],
+          ["Reverb", reverb],
+          ["Delay", delay],
+          ...(refName ? ([["Referans şarkı", refName]] as [string, string][]) : []),
+          ...(notes.trim() ? ([["Prodüktöre not", notes.trim()]] as [string, string][]) : []),
+        ],
+        files: uploaded,
+        addonId: addonId || undefined,
+        beklenenTutar: orderTotal,
+        yonlendir: false,
+      });
+      if (r.ok) {
+        istekRef.current = null;
+        yuklenen.current = null;
+        setOnizleme(false);
+        setDoneCode(r.code || "");
+        setFiles([]);
+        setReference(null);
+        setOnay(false);
+      } else if (r.needTopup) {
+        setEksik(r.missing || null);
+        setOnizHata(r.error || "Yetersiz bakiye.");
+      } else if (r.fiyatDegisti) {
+        setOnizleme(false);
+        setNotice((r.error || "Fiyat değişti.") + (r.guncel?.toplam !== undefined ? ` Güncel tutar: ${money(Number(r.guncel.toplam))}.` : ""));
+      } else {
+        setOnizHata(r.error || "Sipariş gönderilemedi. Lütfen tekrar dene.");
+      }
+    } catch (e) {
+      setProgress("");
+      setOnizHata(e instanceof Error ? e.message : "Dosyalar yüklenemedi. Lütfen tekrar dene.");
+    }
     setSending(false);
   }
 
@@ -989,7 +1020,7 @@ export default function MixMasteringPage() {
               HITY7 / AUDIO SERVICES
             </div>
           </div>
-          <EkHizmetKarti service="mix" />
+          <EkHizmetKarti service="mix" value={addonId} onChange={setAddonId} />
         </div>
 
         {samples.length > 0 && (
@@ -1121,7 +1152,7 @@ export default function MixMasteringPage() {
                 ref={fileInput}
                 type="file"
                 multiple
-                accept=".zip,.wav,.mp3,.aiff,.aif,.flac"
+                accept=".zip,.wav,.mp3"
                 className="hidden"
                 onChange={(event) => {
                   addFiles(event.target.files);
@@ -1139,18 +1170,12 @@ export default function MixMasteringPage() {
                 </div>
                 <span className="hd text-xl font-extrabold">Dosyalarınızı ZIP olarak yükleyin</span>
                 <span className="mt-2 text-sm text-[#686868]">
-                  ZIP, WAV, MP3, AIFF veya FLAC
+                  ZIP, WAV veya MP3 (dosya başına en fazla 50 MB)
                 </span>
                 <span className="mt-5 rounded-full bg-[#111] px-6 py-3 text-xs font-bold tracking-[0.1em] text-white">
                   DOSYA SEÇ
                 </span>
               </button>
-
-              {files.length === 0 && cartWork.length > 0 && (
-                <p className="mt-4 rounded-2xl border-2 border-dashed border-[#111]/40 bg-[#f5f5f5] px-4 py-3 text-[13px] leading-5 text-[#242424]">
-                  Sepette yüklü dosyalar: <b>{cartWork.map((f) => f.name).join(", ")}</b>. Yeni dosya seçersen bunların yerine geçer.
-                </p>
-              )}
 
               {files.length > 0 && (
                 <div className="mt-4 space-y-2">
@@ -1341,7 +1366,7 @@ export default function MixMasteringPage() {
               <input
                 ref={referenceInput}
                 type="file"
-                accept=".wav,.mp3,.aiff,.aif,.flac"
+                accept=".wav,.mp3"
                 className="hidden"
                 onChange={(event) =>
                   setReference(event.target.files?.[0] || null)
@@ -1403,12 +1428,7 @@ export default function MixMasteringPage() {
               <SummaryRow label="Dosya sayısı" value={`${files.length} dosya`} />
               <SummaryRow label="Mix karakteri" value={mixStyle} />
               <SummaryRow label="Vokal" value={vocalPosition} />
-              {addonItem && addonLine && (
-                <SummaryRow
-                  label="Ek hizmet"
-                  value={`+ ${addonItem.name}${addonLine.qty > 1 ? ` ×${addonLine.qty}` : ""} · ${money(addonTotal)}`}
-                />
-              )}
+              {addonItem && <SummaryRow label="Ek hizmet" value={`+ ${addonItem.name} · ${money(addonTotal)}`} />}
             </div>
 
             <div className="mt-6">
@@ -1416,23 +1436,20 @@ export default function MixMasteringPage() {
                 {addonItem ? "Toplam (ek hizmet dahil)" : "Toplam hizmet bedeli"}
               </span>
               <div className="hd mt-2 text-4xl font-extrabold tracking-[-0.04em]">
-                {money(price + addonTotal)}
+                {money(orderTotal)}
               </div>
             </div>
 
-            {inCart && (
-              <p className="mt-5 rounded-2xl border-2 border-dashed border-[#111]/40 bg-[#f5f5f5] px-4 py-3 text-[13px] leading-5 text-[#242424]">
-                Sepetinde bir Mix &amp; Mastering var{inCart.info ? <> (<b>{inCart.info}</b>)</> : null}. Aynı hizmet iki kez eklenmez; bu
-                formla sepettekini güncelleyebilirsin. Adet ve ek hizmet korunur.
-              </p>
-            )}
+            <div className="mt-6">
+              <SozlesmeOnay tur="siparis" checked={onay} onChange={setOnay} />
+            </div>
 
             <button
               type="submit"
               disabled={sending}
               className="mt-7 w-full rounded-full border-[2.5px] border-[#111] bg-[#f5c518] py-4 text-sm font-bold tracking-[0.1em] text-[#111] shadow-[0_5px_0_#111] transition hover:-translate-y-0.5 hover:bg-[#e5b600] hover:shadow-[0_7px_0_#111] active:translate-y-[3px] active:shadow-[0_1px_0_#111] disabled:cursor-wait disabled:opacity-60"
             >
-              {sending ? progress || "SEPETE EKLENİYOR…" : inCart ? "SEPETTEKİNİ GÜNCELLE →" : "SEPETE EKLE →"}
+              {`${money(orderTotal)} · SİPARİŞ VER →`}
             </button>
 
             {notice && (
@@ -1449,24 +1466,44 @@ export default function MixMasteringPage() {
               </p>
             )}
 
-            {added && (
+            {doneCode && (
               <div role="status" className="mt-4 rounded-2xl border-[2.5px] border-[#111] bg-[#f5c518] p-4 text-sm leading-6 text-[#111]">
-                <strong>{added === "replaced" ? "Sepetteki Mix & Mastering güncellendi ✓" : "Sepete eklendi ✓"}</strong>
+                <strong>Siparişin alındı ✓</strong>
                 <br />
-                Siparişi sepette sözleşme onayıyla tamamlarsın; tutar bakiyenden tek seferde düşülür.{" "}
-                <button type="button" onClick={openCart} className="font-bold underline">
-                  Sepeti aç →
-                </button>
+                Sipariş numaran: <b>{doneCode}</b>. Tutar bakiyenden düşüldü.{" "}
+                <a href="/panel" className="font-bold underline">
+                  Siparişlerim →
+                </a>
               </div>
             )}
 
             <p className="mt-4 text-center text-[12px] leading-5 text-[#686868]">
-              Sipariş sepette tamamlanır ve tutar bakiyenden düşülür. Dosyaların prodüktöre iletilir;
+              Siparişi onayladığında tutar bakiyenden tek seferde düşülür. Dosyaların prodüktöre iletilir;
               teslimatı ve revizyon taleplerini hesabındaki Siparişlerim bölümünden takip edersin.
             </p>
           </aside>
         </form>
       </div>
+
+      <SiparisOnizleme
+        acik={onizleme}
+        baslik={`${service === "mix" ? "Mix & Mastering" : "Stems Mix & Mastering"} · ${selectedProducer.name}`}
+        kalemler={[
+          {
+            ad: service === "mix" ? "Mix & Mastering" : "Stems Mix & Mastering",
+            not: `${selectedProducer.name} · ${files.length} dosya${reference ? " + referans" : ""}`,
+            tutar: price,
+          },
+          ...(addonItem ? [{ ad: `Ek hizmet · ${addonItem.name}`, tutar: addonItem.price }] : []),
+        ]}
+        araToplam={orderTotal}
+        toplam={orderTotal}
+        gonderiliyor={sending}
+        hata={progress || onizHata}
+        eksik={eksik}
+        onOnayla={confirmOrder}
+        onKapat={() => setOnizleme(false)}
+      />
     </main>
   );
 }

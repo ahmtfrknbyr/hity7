@@ -38,6 +38,7 @@ export default function GirisPage() {
   const [msg, setMsg] = useState("");
   const [msgOk, setMsgOk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dogrulaBekle, setDogrulaBekle] = useState(false);
 
   useEffect(() => {
     let sb: ReturnType<typeof getSupabase>;
@@ -94,20 +95,51 @@ export default function GirisPage() {
       const { data, error } = await sb.auth.signUp({
         email: mail,
         password,
-        options: { data: { full_name: name.trim(), terms_version: LEGAL_VERSION, terms_accepted_at: new Date().toISOString() } },
+        options: {
+          emailRedirectTo: `${window.location.origin}/giris`,
+          data: { full_name: name.trim(), terms_version: LEGAL_VERSION, terms_accepted_at: new Date().toISOString() },
+        },
       });
       setBusy(false);
       if (error) return setMsg(error.message.toLowerCase().includes("already") ? "Bu e-posta ile zaten üyelik var. Giriş yapmayı dene." : error.message);
       if (!data.session) {
         setMsgOk(true);
-        return setMsg("Kayıt alındı. E-postana gelen bağlantıyla doğrulayıp giriş yap.");
+        setDogrulaBekle(true);
+        return setMsg("Kayıt alındı. E-postana bir doğrulama bağlantısı gönderdik; bağlantıya tıkladıktan sonra giriş yapabilirsin. Gelmezse spam klasörüne bak.");
       }
     } else {
       const { error } = await sb.auth.signInWithPassword({ email: mail, password });
       setBusy(false);
-      if (error) return setMsg("E-posta veya şifre hatalı.");
+      if (error) {
+        if (error.message.toLowerCase().includes("not confirmed")) {
+          setDogrulaBekle(true);
+          return setMsg("E-postan henüz doğrulanmamış. Gelen kutundaki doğrulama bağlantısına tıkla; gelmediyse aşağıdan yeniden gönder.");
+        }
+        return setMsg("E-posta veya şifre hatalı.");
+      }
     }
     window.location.href = safeNext();
+  }
+
+  async function tekrarGonder() {
+    let sb: ReturnType<typeof getSupabase>;
+    try {
+      sb = getSupabase();
+    } catch {
+      return;
+    }
+    const mail = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(mail)) return setMsg("Önce e-posta adresini yaz.");
+    setBusy(true);
+    const { error } = await sb.auth.resend({ type: "signup", email: mail, options: { emailRedirectTo: `${window.location.origin}/giris` } });
+    setBusy(false);
+    if (error) {
+      const m = error.message.toLowerCase();
+      setMsgOk(false);
+      return setMsg(error.status === 429 || m.includes("security purposes") || m.includes("rate limit") ? "Çok sık denedin. Bir dakika bekleyip tekrar dene." : "Doğrulama e-postası gönderilemedi. Lütfen biraz sonra tekrar dene.");
+    }
+    setMsgOk(true);
+    setMsg("Doğrulama e-postasını yeniden gönderdik. Gelen kutunu ve spam klasörünü kontrol et.");
   }
 
   return (
@@ -157,6 +189,11 @@ export default function GirisPage() {
             {busy ? "BEKLE…" : mode === "login" ? "GİRİŞ YAP ↗" : mode === "register" ? "HESAP OLUŞTUR ↗" : "BAĞLANTI GÖNDER ↗"}
           </button>
           {msg && <p className={`gr-msg ${msgOk ? "ok" : ""}`} role={msgOk ? "status" : "alert"}>{msg}</p>}
+          {dogrulaBekle && mode !== "reset" && (
+            <p className="gr-note">
+              <button type="button" className="gr-link" disabled={busy} onClick={tekrarGonder}>Doğrulama e-postasını tekrar gönder</button>
+            </p>
+          )}
           {mode === "reset" ? (
             <p className="gr-note">
               <button type="button" className="gr-link" onClick={() => switchMode("login")}>← Girişe dön</button>

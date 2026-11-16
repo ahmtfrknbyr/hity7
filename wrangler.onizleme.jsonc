@@ -1,0 +1,28 @@
+{
+  // HITY7 ÖNİZLEME (Preview) — canlı "hity7" Worker'ından ve hity7.net alan adından tamamen ayrıdır.
+  // Yalnızca workers.dev adresinde yayınlanır. Canlı Supabase bağlantısı YOKTUR; gizli anahtar yoktur.
+  // Derleme/yayın: YAYIN-ONIZLEME.md
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hity7-onizleme",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-10",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "hity7-onizleme"
+    }
+  ],
+  "vars": {
+    "HITY7_ONIZLEME": "1"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

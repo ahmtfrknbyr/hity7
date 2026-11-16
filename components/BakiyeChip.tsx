@@ -2,12 +2,13 @@
 
 /**
  * components/BakiyeChip.tsx
- * Her sayfanın üst menüsünde görünen küçük bakiye kutusu.
- * Girişliyse bakiyeyi gösterir ve tıklayınca bakiye yükleme sayfasına götürür.
- * Girişli ama bakiye okunamıyorsa (ör. sunucu kurulumu eksik) "CÜZDANIM" bağlantısı gösterir.
- * Giriş yoksa "GİRİŞ YAP" yazar. Stil kendi içindedir, projedeki CSS'e bağlı değildir.
+ * Her sayfanın üst menüsünde görünen bakiye kutusu: "₺1.250,00 | Cüzdanım" (5. aşama).
+ * - Bakiye sunucuda, kullanıcının yalnızca KENDİ hareketlerinden hesaplanır (/api/bakiye → wallet_balance).
+ * - Bakiye okunamazsa yanlışlıkla "0 TL" gösterilmez: "Bakiye okunamadı ↻" ile yeniden denenir.
+ * - Sipariş, yükleme veya iade sonrası ("hity7:bakiye" olayı) ve sekmeye geri dönüldüğünde yenilenir.
+ * - Ziyaretçiye bakiye gösterilmez. Stil kendi içindedir.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getSupabase } from "../lib/supabase";
 
 type ChipState = "load" | "out" | "err" | number;
@@ -31,7 +32,8 @@ async function loadBalance(): Promise<ChipState> {
     });
     if (!res.ok) return "err";
     const j = await res.json();
-    return Number(j.balance) || 0;
+    const b = Number(j.balance);
+    return Number.isFinite(b) ? b : "err";
   } catch {
     return "err";
   }
@@ -40,19 +42,22 @@ async function loadBalance(): Promise<ChipState> {
 export default function BakiyeChip({ dark = false, hideWhenOut = false }: { dark?: boolean; hideWhenOut?: boolean }) {
   const [state, setState] = useState<ChipState>("load");
 
+  const refresh = useCallback(() => {
+    loadBalance().then(setState);
+  }, []);
+
   useEffect(() => {
     let alive = true;
-    const refresh = () => {
-      loadBalance().then((s) => {
-        if (alive) setState(s);
-      });
-    };
-    refresh();
-    // Sipariş verilince bakiye hemen yenilenir
-    window.addEventListener("hity7:bakiye", refresh);
+    const run = () => loadBalance().then((s) => alive && setState(s));
+    run();
+    // Sipariş / yükleme / iade sonrası ve sekmeye geri dönüldüğünde bakiye yenilenir
+    window.addEventListener("hity7:bakiye", run);
+    const vis = () => document.visibilityState === "visible" && run();
+    document.addEventListener("visibilitychange", vis);
     return () => {
       alive = false;
-      window.removeEventListener("hity7:bakiye", refresh);
+      window.removeEventListener("hity7:bakiye", run);
+      document.removeEventListener("visibilitychange", vis);
     };
   }, []);
 
@@ -69,11 +74,12 @@ export default function BakiyeChip({ dark = false, hideWhenOut = false }: { dark
     fontFamily: "Inter, Arial, sans-serif",
     fontSize: 11,
     fontWeight: 800,
-    letterSpacing: ".06em",
+    letterSpacing: ".04em",
     background: dark ? "#111" : "#f5c518",
     color: dark ? "#f5c518" : "#111",
     textDecoration: "none",
     whiteSpace: "nowrap",
+    cursor: "pointer",
   };
 
   if (state === "out") {
@@ -81,15 +87,20 @@ export default function BakiyeChip({ dark = false, hideWhenOut = false }: { dark
   }
   if (state === "err") {
     return (
-      <a href="/panel?tab=wallet" style={base} title="Cüzdanım">
-        CÜZDANIM
-      </a>
+      <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+        <button type="button" onClick={refresh} style={{ ...base, background: dark ? "#111" : "#fff" }} title="Bakiye okunamadı, yeniden dene">
+          BAKİYE OKUNAMADI ↻
+        </button>
+        <a href="/bakiye" style={{ ...base, background: dark ? "#111" : "#fff" }}>CÜZDANIM</a>
+      </span>
     );
   }
   const tl = state.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
-    <a href="/bakiye" style={base} title="Bakiye yükle">
-      BAKİYE: {tl} TL <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>
+    <a href="/bakiye" style={base} title="Cüzdanım · bakiye yükle">
+      ₺{tl}
+      <span aria-hidden="true" style={{ opacity: 0.55 }}>|</span>
+      CÜZDANIM
     </a>
   );
 }
