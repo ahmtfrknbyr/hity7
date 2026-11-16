@@ -97,8 +97,17 @@ const CSS = `
 @media (prefers-reduced-motion:reduce){.bk-btn,.bk-chip,.bk-method,.bk-wallet-links a,.bk-wallet-links button{transition:none}}
 `;
 
+/** Supabase bilgisi yoksa (ör. önizleme ortamı) sayfa çökmez; "sistem kurulmamış" ekranı gösterilir. */
+function sbOrNull() {
+  try {
+    return getSupabase();
+  } catch {
+    return null;
+  }
+}
+
 export default function BakiyePage() {
-  const sb = getSupabase();
+  const sb = sbOrNull();
   const [ready, setReady] = useState(false);
   const [logged, setLogged] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");

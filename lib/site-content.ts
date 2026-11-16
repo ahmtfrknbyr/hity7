@@ -446,7 +446,7 @@ async function readSiteContent(query: string): Promise<{ key: string; value: unk
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   // Eski (anon) ve yeni (publishable) anahtar adlarının ikisi de desteklenir.
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) return null;
+  if (!url || !key || url.includes(".invalid")) return null;
   try {
     const res = await fetch(`${url}/rest/v1/site_content?${query}`, {
       // Yeni sb_ anahtarlar JWT değildir; yalnızca apikey başlığında gönderilir.

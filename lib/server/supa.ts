@@ -13,6 +13,9 @@ export const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 export const SUPA_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "";
 export const SUPA_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
 
+/** Önizleme ortamında veritabanı adresi ".invalid" yer tutucusudur: hiç istek atılmaz (Cloudflare'de askıda kalmasın). */
+const dbYok = () => SUPA_URL.includes(".invalid");
+
 /** Sunucu tarafı işlemler için gerekli anahtarlar tanımlı mı? */
 export const serverReady = () => !!(SUPA_URL && SUPA_ANON && SUPA_SERVICE);
 
@@ -36,6 +39,7 @@ export type DbResult<T = unknown> = { ok: boolean; status: number; body: T; text
 /** Gizli anahtarla PostgREST çağrısı (RLS'i atlar, yalnızca sunucuda). */
 export async function db<T = unknown>(path: string, init: RequestInit & { prefer?: string } = {}): Promise<DbResult<T>> {
   const { prefer, headers, ...rest } = init;
+  if (dbYok()) return { ok: false, status: 503, body: null as T, text: "" };
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
     ...rest,
     headers: {
@@ -63,6 +67,7 @@ export function rpc<T = unknown>(fn: string, args: Record<string, unknown>) {
 
 /** Herkese açık anahtarla PostgREST çağrısı (RLS geçerli). */
 export async function anonDb(path: string, init: RequestInit = {}) {
+  if (dbYok()) return new Response(null, { status: 503 });
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
     ...init,
     headers: { ...keyHeaders(SUPA_ANON), "content-type": "application/json", ...(init.headers as Record<string, string> | undefined) },
@@ -76,7 +81,7 @@ export type AuthUser = { id: string; email: string; name: string; verified: bool
 /** İstekteki "Authorization: Bearer <oturum>" başlığından kullanıcıyı doğrular. */
 export async function getUser(req: Request): Promise<AuthUser | null> {
   const auth = req.headers.get("authorization") || "";
-  if (!auth.toLowerCase().startsWith("bearer ") || !SUPA_URL || !SUPA_ANON) return null;
+  if (!auth.toLowerCase().startsWith("bearer ") || !SUPA_URL || !SUPA_ANON || dbYok()) return null;
   try {
     const res = await fetch(`${SUPA_URL}/auth/v1/user`, { headers: { apikey: SUPA_ANON, Authorization: auth }, cache: "no-store" });
     if (!res.ok) return null;
@@ -114,7 +119,7 @@ async function readAs<T>(path: string, userAuth?: string): Promise<T | null> {
     const r = await db<T>(path);
     return r.ok ? r.body : null;
   }
-  if (!userAuth) return null;
+  if (!userAuth || dbYok()) return null;
   const res = await fetch(`${SUPA_URL}/rest/v1/${path}`, { headers: { apikey: SUPA_ANON, Authorization: userAuth }, cache: "no-store" });
   return res.ok ? ((await res.json()) as T) : null;
 }

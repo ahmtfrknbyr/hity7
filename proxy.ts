@@ -29,7 +29,7 @@ async function ayarlar(): Promise<Ayarlar> {
   if (g.__h7Ayar && simdi - g.__h7Ayar.at < SURE) return g.__h7Ayar;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return { at: simdi, bakim: false, erisim: mergeErisim(null) };
+  if (!url || !key || url.includes(".invalid")) return { at: simdi, bakim: false, erisim: mergeErisim(null) };
   try {
     const res = await fetch(`${url}/rest/v1/site_content?key=in.(general,erisim)&select=key,value`, {
       headers: key.startsWith("eyJ") ? { apikey: key, Authorization: `Bearer ${key}` } : { apikey: key },

@@ -26,7 +26,7 @@ const geistMono = Geist_Mono({
 async function seoOku(): Promise<SeoContent> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) return DEFAULT_CONTENT.seo;
+  if (!url || !key || url.includes(".invalid")) return DEFAULT_CONTENT.seo;
   try {
     const res = await fetch(`${url}/rest/v1/site_content?key=eq.seo&select=value`, {
       headers: key.startsWith("eyJ") ? { apikey: key, Authorization: `Bearer ${key}` } : { apikey: key },
