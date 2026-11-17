@@ -74,7 +74,7 @@ if (-not $Onayliyorum) {
 }
 
 Adim "6/7 CANLIYA YAYIN (Worker: hity7)"
-npx wrangler deploy
+npx wrangler deploy --keep-vars
 if ($LASTEXITCODE -ne 0) { Hata "Yayın başarısız. Canlı site önceki sürümde duruyor." }
 Tamam "Yayınlandı"
 
