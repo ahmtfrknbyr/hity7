@@ -29,6 +29,7 @@ import {
   type PermMap,
 } from "./extra";
 import { AuditTab, CeoDashboard, ReleasesTab, rpcCall } from "./ceo-extra";
+import RemakeSesleri from "./remake-ses";
 import {
   DepolamaDurumu,
   ErisimMatrisi,
@@ -1689,6 +1690,9 @@ function Panel({
             ))}
           </div>
         </div>
+
+        {/* Remake Beat paket kartlarındaki DİNLE düğmelerinin örnek sesleri (anında kaydedilir; taslak / Kaydet düzeninden bağımsız) */}
+        <RemakeSesleri sb={sb} notify={notify} />
 
         <div className={`${card} border-[3px] p-5 sm:p-7`}>
           <h2 className="hd text-xl font-extrabold">Ek hizmetler (sepet önerileri)</h2>

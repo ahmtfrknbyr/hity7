@@ -46,3 +46,6 @@ yarn-error.log*
 next-env.d.ts
 
 _eski-kopya/
+
+# kişisel e-posta içeren hazır SQL kopyaları (GitHub'a gitmez)
+/supabase/kisisel/

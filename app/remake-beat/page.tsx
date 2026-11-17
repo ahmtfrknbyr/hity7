@@ -1,9 +1,10 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { istekKimligi, sendOrder, uploadOrderFiles, type UploadedFile } from "../../lib/siparis";
 import { useSiteContent } from "../../lib/use-site-content";
+import { useRemakeSesler } from "../../lib/remake-ses";
 import { getSupabase } from "../../lib/supabase";
 import EkHizmetKarti from "../../components/EkHizmetKarti";
 import SozlesmeOnay from "../../components/SozlesmeOnay";
@@ -12,10 +13,10 @@ import { addonFor } from "../../lib/sepet-hesap";
 
 // Fiyatlar yönetim panelindeki "Sipariş fiyatları"ndan gelir; buradaki değerler yalnızca varsayılandır.
 const options = [
-  { id: "free", name: "FREE BEAT", price: 0, description: "Hazır beat seçimi", tag: "ÜCRETSİZ", notes: [110, 130, 146, 130] },
-  { id: "birebir", name: "BİREBİR REMAKE", price: 3000, description: "Referans parçaya yakın altyapı", tag: "CLASSIC", notes: [98, 110, 123, 110] },
-  { id: "modern", name: "MODERN REMAKE", price: 4000, description: "Güncel sound ve modern prodüksiyon", tag: "MODERN", notes: [130, 146, 164, 146] },
-  { id: "ozgun", name: "ÖZGÜN REMAKE", price: 5000, description: "Özgün dokunuşlarla yeniden tasarlanan altyapı", tag: "PREMIUM", notes: [146, 164, 185, 164] },
+  { id: "free", name: "FREE BEAT", price: 0, description: "Hazır beat seçimi", tag: "ÜCRETSİZ" },
+  { id: "birebir", name: "BİREBİR REMAKE", price: 3000, description: "Referans parçaya yakın altyapı", tag: "CLASSIC" },
+  { id: "modern", name: "MODERN REMAKE", price: 4000, description: "Güncel sound ve modern prodüksiyon", tag: "MODERN" },
+  { id: "ozgun", name: "ÖZGÜN REMAKE", price: 5000, description: "Özgün dokunuşlarla yeniden tasarlanan altyapı", tag: "PREMIUM" },
 ];
 
 export default function RemakeBeatPage() {
@@ -35,7 +36,10 @@ export default function RemakeBeatPage() {
   const [onizHata, setOnizHata] = useState("");
   const [eksik, setEksik] = useState<number | null>(null);
   const [yukleme, setYukleme] = useState("");
-  const audioRef = useRef<AudioContext | null>(null);
+  // DİNLE: örnek sesler CEO panelinden yüklenir (Hizmetler → Remake Beat örnek sesleri); sesi olmayan pakette düğme gösterilmez
+  const sesler = useRemakeSesler();
+  const sesRef = useRef<HTMLAudioElement | null>(null);
+  const [bozukSes, setBozukSes] = useState<string[]>([]);
   // Tekrar koruması ve aynı denemede dosyanın ikinci kez yüklenmemesi
   const istekRef = useRef<{ key: string; sig: string } | null>(null);
   const yuklenen = useRef<{ file: File; out: UploadedFile[] } | null>(null);
@@ -51,51 +55,40 @@ export default function RemakeBeatPage() {
   const addonTotal = addonItem ? addonItem.price : 0;
   const total = Math.round((activeOption.price + addonTotal) * 100) / 100;
 
-  const playOption = async (item: typeof options[number]) => {
-    if (playing === item.id) {
+  const sesiDurdur = () => {
+    const el = sesRef.current;
+    if (el) {
+      el.onended = null;
+      el.onerror = null;
+      el.pause();
+    }
+    sesRef.current = null;
+  };
+
+  // Sayfadan çıkılınca çalan ses durur
+  useEffect(() => sesiDurdur, []);
+
+  const playOption = (id: string, url: string) => {
+    // Aynı karta tekrar basmak durdurur; başka karta basmak öncekini durdurup yenisini çalar
+    if (playing === id) {
+      sesiDurdur();
       setPlaying(null);
       return;
     }
-
-    try {
-      const AudioContextClass =
-        window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-
-      if (!AudioContextClass) return;
-
-      const context = audioRef.current || new AudioContextClass();
-      audioRef.current = context;
-
-      if (context.state === "suspended") await context.resume();
-
-      setPlaying(item.id);
-      const start = context.currentTime;
-
-      item.notes.forEach((frequency, index) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-
-        oscillator.type = "triangle";
-        oscillator.frequency.setValueAtTime(frequency, start + index * 0.35);
-
-        gain.gain.setValueAtTime(0.0001, start + index * 0.35);
-        gain.gain.exponentialRampToValueAtTime(0.12, start + index * 0.35 + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + index * 0.35 + 0.3);
-
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-
-        oscillator.start(start + index * 0.35);
-        oscillator.stop(start + index * 0.35 + 0.32);
-      });
-
-      window.setTimeout(() => {
-        setPlaying((current) => current === item.id ? null : current);
-      }, 1700);
-    } catch {
-      setPlaying(null);
-    }
+    sesiDurdur();
+    const el = new Audio(url);
+    el.preload = "auto";
+    el.onended = () => setPlaying((cur) => (cur === id ? null : cur));
+    el.onerror = () => {
+      // Dosya açılamıyorsa çalışmayan düğme bırakılmaz
+      setPlaying((cur) => (cur === id ? null : cur));
+      setBozukSes((cur) => (cur.includes(id) ? cur : [...cur, id]));
+    };
+    sesRef.current = el;
+    setPlaying(id);
+    el.play().catch(() => {
+      setPlaying((cur) => (cur === id ? null : cur));
+    });
   };
 
   /** Sipariş önizlemesini açar (sepet yok: doğrudan sipariş + cüzdandan ödeme). */
@@ -318,14 +311,17 @@ export default function RemakeBeatPage() {
                       </div>
                       <p className="mt-2 text-[13px] leading-5 text-[#686868]">{item.description}</p>
                     </button>
-                    <div className="mt-3 flex items-center justify-between border-t-2 border-[#111]/15 pt-3">
+                    <div className="mt-3 flex min-h-[58px] items-center justify-between border-t-2 border-[#111]/15 pt-3">
                       <span className="text-[11px] font-bold tracking-[0.1em] text-[#242424]">TESLİM: 24 SAAT</span>
-                      <button
-                        onClick={() => playOption(item)}
-                        className="rounded-full border-2 border-[#111] bg-[#111] px-4 py-2 text-[11px] font-bold text-[#f5c518] transition hover:-translate-y-0.5"
-                      >
-                        {playing === item.id ? "Ⅱ DURDUR" : "▶ DİNLE"}
-                      </button>
+                      {sesler?.[item.id as keyof typeof sesler] && !bozukSes.includes(item.id) && (
+                        <button
+                          onClick={() => playOption(item.id, sesler[item.id as keyof typeof sesler]!.url)}
+                          aria-label={`${item.name} örnek sesi: ${playing === item.id ? "DURDUR" : "DİNLE"}`}
+                          className="rounded-full border-2 border-[#111] bg-[#111] px-4 py-2 text-[11px] font-bold text-[#f5c518] transition hover:-translate-y-0.5"
+                        >
+                          {playing === item.id ? "Ⅱ DURDUR" : "▶ DİNLE"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
